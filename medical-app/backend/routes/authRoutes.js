@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
+const { verifyToken } = require('../middleware/auth');
 
 // Route d'inscription
 router.post('/register', async (req, res) => {
@@ -75,13 +76,7 @@ router.post('/login', async (req, res) => {
 
         const user = users[0];
         
-        // Vérifier le mot de passe (pour admin en clair, pour les autres hashé)
-        let validPassword = false;
-        if (user.role === 'admin' && password === user.password) {
-            validPassword = true;
-        } else {
-            validPassword = await bcrypt.compare(password, user.password);
-        }
+        const validPassword = await bcrypt.compare(password, user.password);
 
         if (!validPassword) {
             return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
@@ -110,6 +105,47 @@ router.post('/login', async (req, res) => {
     } catch (error) {
         console.error('❌ Erreur connexion:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    }
+});
+
+// PUT /api/auth/profile — update profile (all roles)
+router.put('/profile', verifyToken, async (req, res) => {
+    try {
+        const { nom, prenom, telephone, specialite } = req.body;
+        await db.execute(
+            'UPDATE users SET nom = ?, prenom = ?, telephone = ?, specialite = ? WHERE id = ?',
+            [nom, prenom, telephone || null, specialite || null, req.user.id]
+        );
+        const [rows] = await db.execute(
+            'SELECT id, nom, prenom, email, telephone, role, specialite FROM users WHERE id = ?',
+            [req.user.id]
+        );
+        res.json({ message: 'Profil mis à jour avec succès.', user: rows[0] });
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/auth/change-password — all roles
+router.put('/change-password', verifyToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword)
+            return res.status(400).json({ message: 'Les deux mots de passe sont requis.' });
+        if (newPassword.length < 6)
+            return res.status(400).json({ message: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+
+        const [rows] = await db.execute('SELECT password FROM users WHERE id = ?', [req.user.id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Utilisateur introuvable.' });
+
+        const valid = await bcrypt.compare(currentPassword, rows[0].password);
+        if (!valid) return res.status(401).json({ message: 'Mot de passe actuel incorrect.' });
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await db.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id]);
+        res.json({ message: 'Mot de passe mis à jour avec succès.' });
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }
 });
 

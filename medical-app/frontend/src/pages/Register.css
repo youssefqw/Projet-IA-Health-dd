@@ -1,0 +1,68 @@
+@import './Login.css';
+
+.role-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.role-card {
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg);
+}
+
+.role-card:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.role-card.active {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(14,165,233,0.15);
+}
+
+.role-card .role-icon { font-size: 24px; margin-bottom: 6px; }
+.role-card .role-label { font-size: 13px; font-weight: 600; color: var(--dark-3); }
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.input-wrap select {
+    width: 100%;
+    padding: 14px 16px 14px 46px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    color: var(--dark);
+    background: var(--bg);
+    transition: all 0.2s;
+    outline: none;
+    appearance: none;
+}
+
+.input-wrap select:focus {
+    border-color: var(--primary);
+    background: var(--white);
+    box-shadow: 0 0 0 4px rgba(14,165,233,0.1);
+}
+
+.auth-right.wide {
+    width: 540px;
+    padding: 48px 50px;
+    overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+    .auth-right.wide { width: 100%; padding: 32px 24px; }
+    .form-row { grid-template-columns: 1fr; }
+}
