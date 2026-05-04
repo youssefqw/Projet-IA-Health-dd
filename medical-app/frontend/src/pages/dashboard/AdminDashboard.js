@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
@@ -40,17 +40,35 @@ export default function AdminDashboard() {
     const [doctorFormMsg, setDoctorFormMsg] = useState({ text: '', type: '' });
     const [specialites, setSpecialites] = useState([]);
 
+    // États pour les paiements
+    const [paymentGlobal, setPaymentGlobal] = useState(null);
+    const [paymentByDoctor, setPaymentByDoctor] = useState([]);
+
     const { data: stats,        loading: loadStats,  refetch: refetchStats } = useFetch('http://localhost:5000/api/admin/stats');
     const { data: users,        loading: loadUsers,  refetch: refetchUsers } = useFetch('http://localhost:5000/api/admin/users');
     const { data: appointments, loading: loadAppts  }                        = useFetch('http://localhost:5000/api/admin/appointments');
 
     // Charger les spécialités
-    useState(() => {
+    useEffect(() => {
         fetch('http://localhost:5000/api/auth/specialites')
             .then(r => r.json())
             .then(setSpecialites)
             .catch(() => {});
+        
+        // Charger les stats de paiement
+        fetchPaymentStats();
     }, []);
+
+    const fetchPaymentStats = async () => {
+        try {
+            const res = await authFetch('http://localhost:5000/api/payments/admin/stats');
+            const data = await res.json();
+            setPaymentGlobal(data.global);
+            setPaymentByDoctor(data.byDoctor);
+        } catch (error) {
+            console.error('Erreur:', error);
+        }
+    };
 
     const handleLogout = () => { logout(); navigate('/login'); };
     const initials = user ? `${user.prenom?.[0] || ''}${user.nom?.[0] || ''}`.toUpperCase() : 'A';
@@ -118,61 +136,47 @@ export default function AdminDashboard() {
                 </button>
             </div>
 
-            {showDoctorForm && (
-                <div className="modal-overlay" onClick={() => setShowDoctorForm(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>👨‍⚕️ Créer un nouveau médecin</h3>
-                            <button className="modal-close" onClick={() => setShowDoctorForm(false)}>✕</button>
-                        </div>
-                        <form onSubmit={handleCreateDoctor}>
-                            {doctorFormMsg.text && (
-                                <div className={`modal-msg ${doctorFormMsg.type}`}>{doctorFormMsg.text}</div>
-                            )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Nom *</label>
-                                    <input type="text" name="nom" value={doctorForm.nom} onChange={handleDoctorInputChange} required />
-                                </div>
-                                <div className="form-group">
-                                    <label>Prénom *</label>
-                                    <input type="text" name="prenom" value={doctorForm.prenom} onChange={handleDoctorInputChange} required />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label>Email *</label>
-                                <input type="email" name="email" value={doctorForm.email} onChange={handleDoctorInputChange} required />
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Mot de passe *</label>
-                                    <input type="password" name="password" value={doctorForm.password} onChange={handleDoctorInputChange} required />
-                                    <small>Minimum 6 caractères</small>
-                                </div>
-                                <div className="form-group">
-                                    <label>Téléphone</label>
-                                    <input type="tel" name="telephone" value={doctorForm.telephone} onChange={handleDoctorInputChange} />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label>Spécialité *</label>
-                                <select name="specialite" value={doctorForm.specialite} onChange={handleDoctorInputChange} required>
-                                    <option value="">Choisir une spécialité</option>
-                                    {specialites.map(s => (
-                                        <option key={s.id} value={s.nom}>{s.nom}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="modal-buttons">
-                                <button type="button" className="btn-secondary" onClick={() => setShowDoctorForm(false)}>Annuler</button>
-                                <button type="submit" className="btn-primary" disabled={doctorFormLoading}>
-                                    {doctorFormLoading ? 'Création...' : 'Créer le médecin'}
-                                </button>
-                            </div>
-                        </form>
+            {/* Section Paiements Admin */}
+            <div className="payments-admin-section">
+                <div className="section-header">
+                    <h3>💰 Statistiques financières</h3>
+                </div>
+                <div className="admin-payment-stats">
+                    <div className="admin-stat-card">
+                        <div className="admin-stat-value">{paymentGlobal?.total_global || 0}€</div>
+                        <div className="admin-stat-label">Total des consultations</div>
+                    </div>
+                    <div className="admin-stat-card">
+                        <div className="admin-stat-value">{paymentGlobal?.nombre_total || 0}</div>
+                        <div className="admin-stat-label">Consultations payées</div>
+                    </div>
+                    <div className="admin-stat-card">
+                        <div className="admin-stat-value">{paymentGlobal?.medecins_actifs || 0}</div>
+                        <div className="admin-stat-label">Médecins actifs</div>
                     </div>
                 </div>
-            )}
+
+                <div className="doctors-payment-table">
+                    <h4>👨‍⚕️ Revenus par médecin</h4>
+                    <div className="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Médecin</th><th>Spécialité</th><th>Consultations</th><th>Total reçu</th> </tr>
+                            </thead>
+                            <tbody>
+                                {paymentByDoctor.map((doc) => (
+                                    <tr key={doc.id}>
+                                        <td><strong>Dr. {doc.prenom} {doc.nom}</strong></td>
+                                        <td>{doc.specialite || '-'}</td>
+                                        <td>{doc.nombre_paiements || 0}</td>
+                                        <td className="highlight">{doc.total || 0}€</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
             <div className="stats-grid">
                 <div className="stat-card">
@@ -261,7 +265,7 @@ export default function AdminDashboard() {
                 <div className="table-wrap">
                     <table>
                         <thead>
-                            <tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Spécialité</th><th>Inscription</th><th>Action</th></tr>
+                            <tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Spécialité</th><th>Inscription</th><th>Action</th> </tr>
                         </thead>
                         <tbody>
                             {users.map((u, i) => (
@@ -280,7 +284,7 @@ export default function AdminDashboard() {
                                             <button className="tbl-btn red" onClick={() => deleteUser(u.id)}>🗑</button>
                                         )}
                                     </td>
-                                </tr>
+                                 </tr>
                             ))}
                         </tbody>
                     </table>
@@ -301,7 +305,7 @@ export default function AdminDashboard() {
                 <div className="table-wrap">
                     <table>
                         <thead>
-                            <tr><th>Date</th><th>Patient</th><th>Médecin</th><th>Spécialité</th><th>Motif</th><th>Statut</th></tr>
+                            <tr><th>Date</th><th>Patient</th><th>Médecin</th><th>Spécialité</th><th>Motif</th><th>Statut</th> </tr>
                         </thead>
                         <tbody>
                             {appointments.map((a, i) => (
@@ -312,7 +316,7 @@ export default function AdminDashboard() {
                                     <td>{a.specialite}</td>
                                     <td>{a.motif || '-'}</td>
                                     <td><span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span></td>
-                                </tr>
+                                 </tr>
                             ))}
                         </tbody>
                     </table>
@@ -391,6 +395,62 @@ export default function AdminDashboard() {
                 </div>
                 {renderContent()}
             </main>
+
+            {showDoctorForm && (
+                <div className="modal-overlay" onClick={() => setShowDoctorForm(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>👨‍⚕️ Créer un nouveau médecin</h3>
+                            <button className="modal-close" onClick={() => setShowDoctorForm(false)}>✕</button>
+                        </div>
+                        <form onSubmit={handleCreateDoctor}>
+                            {doctorFormMsg.text && (
+                                <div className={`modal-msg ${doctorFormMsg.type}`}>{doctorFormMsg.text}</div>
+                            )}
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Nom *</label>
+                                    <input type="text" name="nom" value={doctorForm.nom} onChange={handleDoctorInputChange} required />
+                                </div>
+                                <div className="form-group">
+                                    <label>Prénom *</label>
+                                    <input type="text" name="prenom" value={doctorForm.prenom} onChange={handleDoctorInputChange} required />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label>Email *</label>
+                                <input type="email" name="email" value={doctorForm.email} onChange={handleDoctorInputChange} required />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Mot de passe *</label>
+                                    <input type="password" name="password" value={doctorForm.password} onChange={handleDoctorInputChange} required />
+                                    <small>Minimum 6 caractères</small>
+                                </div>
+                                <div className="form-group">
+                                    <label>Téléphone</label>
+                                    <input type="tel" name="telephone" value={doctorForm.telephone} onChange={handleDoctorInputChange} />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label>Spécialité *</label>
+                                <select name="specialite" value={doctorForm.specialite} onChange={handleDoctorInputChange} required>
+                                    <option value="">Choisir une spécialité</option>
+                                    {specialites.map(s => (
+                                        <option key={s.id} value={s.nom}>{s.nom}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="modal-buttons">
+                                <button type="button" className="btn-secondary" onClick={() => setShowDoctorForm(false)}>Annuler</button>
+                                <button type="submit" className="btn-primary" disabled={doctorFormLoading}>
+                                    {doctorFormLoading ? 'Création...' : 'Créer le médecin'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

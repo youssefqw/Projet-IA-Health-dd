@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
@@ -37,22 +37,14 @@ export default function DoctorDashboard() {
     const navigate = useNavigate();
     const [active, setActive] = useState('home');
 
-    // États pour les modales IA
-    const [showSymptomsModal, setShowSymptomsModal] = useState(false);
-    const [showReportModal, setShowReportModal] = useState(false);
-    const [showChatbotModal, setShowChatbotModal] = useState(false);
-    const [showRiskModal, setShowRiskModal] = useState(false);
-    
-    // États pour les formulaires IA
-    const [symptomsForm, setSymptomsForm] = useState({ patientName: '', symptoms: '' });
-    const [reportForm, setReportForm] = useState({ patientName: '', diagnosis: '', treatment: '' });
-    const [chatMessage, setChatMessage] = useState('');
-    const [chatHistory, setChatHistory] = useState([]);
-    const [riskForm, setRiskForm] = useState({ patientName: '', age: '', symptoms: '' });
-    
-    // États pour les résultats IA
-    const [aiResult, setAiResult] = useState(null);
-    const [aiLoading, setAiLoading] = useState(false);
+    // États pour le modal de confirmation avec prix
+    const [showPriceModal, setShowPriceModal] = useState(false);
+    const [selectedAppointment, setSelectedAppointment] = useState(null);
+    const [prixInput, setPrixInput] = useState('');
+
+    // États pour les paiements
+    const [paymentStats, setPaymentStats] = useState({ stats: { total: 0, nombre: 0, moyenne: 0, mois_en_cours: 0 }, recent: [] });
+    const [loadingPayments, setLoadingPayments] = useState(false);
 
     const { data: appointments, loading: loadAppts, refetch: refetchAppts } = useFetch('http://localhost:5000/api/doctors/appointments');
     const { data: patients,     loading: loadPats  }                        = useFetch('http://localhost:5000/api/doctors/patients');
@@ -63,129 +55,85 @@ export default function DoctorDashboard() {
     const todayAppts   = appointments?.filter(a => isToday(a.date_heure)) || [];
     const pendingAppts = appointments?.filter(a => a.statut === 'en_attente') || [];
 
-    const updateStatus = async (id, statut) => {
-        await authFetch(`http://localhost:5000/api/appointments/${id}/status`, {
-            method: 'PUT',
-            body: JSON.stringify({ statut }),
-        });
-        refetchAppts();
+    // Charger les statistiques de paiement
+    const fetchPaymentStats = async () => {
+        setLoadingPayments(true);
+        try {
+            const res = await authFetch('http://localhost:5000/api/payments/doctor/stats');
+            const data = await res.json();
+            setPaymentStats(data);
+        } catch (error) {
+            console.error('Erreur chargement stats paiements:', error);
+        } finally {
+            setLoadingPayments(false);
+        }
     };
 
-    // Analyse des symptômes
-    const handleAnalyzeSymptoms = async (e) => {
-        e.preventDefault();
-        setAiLoading(true);
-        setAiResult(null);
+    useEffect(() => {
+        fetchPaymentStats();
+    }, []);
+
+    // Ouvrir modal pour fixer le prix
+    const openPriceModal = (appointment) => {
+        setSelectedAppointment(appointment);
+        setPrixInput('');
+        setShowPriceModal(true);
+    };
+
+    // Confirmer le rendez-vous avec prix
+    const handleConfirmWithPrice = async () => {
+        if (!prixInput || prixInput <= 0) {
+            alert('Veuillez entrer un prix valide');
+            return;
+        }
         
-        // Simulation d'appel API (à remplacer par votre vrai endpoint)
-        setTimeout(() => {
-            setAiResult({
-                type: 'symptoms',
-                diagnostic: 'Infection respiratoire suspectée',
-                probability: '85%',
-                severity: 'Moyenne',
-                recommendations: [
-                    'Repos au lit pendant 2-3 jours',
-                    'Hydratation abondante',
-                    'Consultation médicale si fièvre > 39°C',
-                    'Éviter les contacts rapprochés'
-                ]
+        try {
+            await authFetch(`http://localhost:5000/api/doctors/appointment/${selectedAppointment.id}/confirm`, {
+                method: 'PUT',
+                body: JSON.stringify({ prix: parseFloat(prixInput) }),
             });
-            setAiLoading(false);
-        }, 2000);
-    };
-
-    // Génération de rapport
-    const handleGenerateReport = async (e) => {
-        e.preventDefault();
-        setAiLoading(true);
-        setAiResult(null);
-        
-        setTimeout(() => {
-            setAiResult({
-                type: 'report',
-                patientName: reportForm.patientName,
-                diagnosis: reportForm.diagnosis,
-                treatment: reportForm.treatment,
-                report: `Rapport médical pour ${reportForm.patientName}\n\nDiagnostic: ${reportForm.diagnosis}\n\nTraitement prescrit: ${reportForm.treatment}\n\nRecommandations: Suivi dans 2 semaines.`
-            });
-            setAiLoading(false);
-        }, 1500);
-    };
-
-    // Chatbot médical
-    const handleSendMessage = async () => {
-        if (!chatMessage.trim()) return;
-        
-        const newMessage = { text: chatMessage, sender: 'user', time: new Date().toLocaleTimeString() };
-        setChatHistory([...chatHistory, newMessage]);
-        setChatMessage('');
-        setAiLoading(true);
-        
-        setTimeout(() => {
-            const botResponse = {
-                text: getBotResponse(chatMessage),
-                sender: 'bot',
-                time: new Date().toLocaleTimeString()
-            };
-            setChatHistory([...chatHistory, newMessage, botResponse]);
-            setAiLoading(false);
-        }, 1000);
-    };
-
-    const getBotResponse = (message) => {
-        const msg = message.toLowerCase();
-        if (msg.includes('symptôme') || msg.includes('symptomes')) {
-            return 'Pour une analyse précise des symptômes, veuillez utiliser l\'outil "Analyse des symptômes" dans la section IA.';
-        }
-        if (msg.includes('rendez-vous') || msg.includes('rdv')) {
-            return 'Vous pouvez gérer vos rendez-vous dans la section "Planning" du menu.';
-        }
-        if (msg.includes('patient')) {
-            return 'La liste de vos patients est disponible dans la section "Mes patients".';
-        }
-        if (msg.includes('médicament') || msg.includes('traitement')) {
-            return 'Pour les prescriptions, utilisez l\'outil "Génération de rapports".';
-        }
-        return 'Je suis votre assistant médical. Je peux vous aider avec l\'analyse des symptômes, la génération de rapports et les informations médicales générales. Comment puis-je vous aider ?';
-    };
-
-    // Score de risque
-    const handleAnalyzeRisk = async (e) => {
-        e.preventDefault();
-        setAiLoading(true);
-        setAiResult(null);
-        
-        setTimeout(() => {
-            const riskScore = Math.floor(Math.random() * 100);
-            let riskLevel = 'Faible';
-            let recommendation = 'Patient en bonne santé générale.';
             
-            if (riskScore > 70) {
-                riskLevel = 'Élevé';
-                recommendation = 'Consultation urgente recommandée. Examen approfondi nécessaire.';
-            } else if (riskScore > 40) {
-                riskLevel = 'Modéré';
-                recommendation = 'Surveillance recommandée. Suivi dans 3 mois.';
-            } else {
-                riskLevel = 'Faible';
-                recommendation = 'Patient en bonne santé générale.';
-            }
-            
-            setAiResult({
-                type: 'risk',
-                patientName: riskForm.patientName,
-                age: riskForm.age,
-                riskScore: riskScore,
-                riskLevel: riskLevel,
-                recommendation: recommendation
-            });
-            setAiLoading(false);
-        }, 1800);
+            setShowPriceModal(false);
+            refetchAppts();
+            fetchPaymentStats();
+        } catch (error) {
+            console.error('Erreur:', error);
+        }
     };
 
     const renderHome = () => (
         <>
+            <div className="payment-stats-grid">
+                <div className="payment-card">
+                    <div className="payment-card-icon blue">💰</div>
+                    <div className="payment-card-info">
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.total || 0}€`}</div>
+                        <div className="payment-card-title">Total des revenus</div>
+                    </div>
+                </div>
+                <div className="payment-card">
+                    <div className="payment-card-icon green">📊</div>
+                    <div className="payment-card-info">
+                        <div className="payment-card-value">{loadingPayments ? '...' : paymentStats.stats?.nombre || 0}</div>
+                        <div className="payment-card-title">Consultations payées</div>
+                    </div>
+                </div>
+                <div className="payment-card">
+                    <div className="payment-card-icon purple">💶</div>
+                    <div className="payment-card-info">
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.moyenne || 0}€`}</div>
+                        <div className="payment-card-title">Moyenne par consultation</div>
+                    </div>
+                </div>
+                <div className="payment-card">
+                    <div className="payment-card-icon orange">📅</div>
+                    <div className="payment-card-info">
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.mois_en_cours || 0}€`}</div>
+                        <div className="payment-card-title">Ce mois-ci</div>
+                    </div>
+                </div>
+            </div>
+
             <div className="stats-grid">
                 <div className="stat-card">
                     <div className="stat-icon blue">🧑‍⚕️</div>
@@ -265,9 +213,18 @@ export default function DoctorDashboard() {
                 <div className="empty-state">Aucun rendez-vous trouvé.</div>
             ) : (
                 <div className="table-wrap">
-                    <table>
+                    <table className="appointments-table">
                         <thead>
-                            <tr><th>Date</th><th>Heure</th><th>Patient</th><th>Téléphone</th><th>Motif</th><th>Statut</th><th>Actions</th></tr>
+                            <tr>
+                                <th>Date</th>
+                                <th>Heure</th>
+                                <th>Patient</th>
+                                <th>Téléphone</th>
+                                <th>Motif</th>
+                                <th>Prix</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {appointments.map((a, i) => (
@@ -277,16 +234,13 @@ export default function DoctorDashboard() {
                                     <td><strong>{a.patient_prenom} {a.patient_nom}</strong></td>
                                     <td>{a.patient_tel || '-'}</td>
                                     <td>{a.motif || '-'}</td>
+                                    <td>{a.prix_medecin ? `${a.prix_medecin}€` : '-'}</td>
                                     <td><span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span></td>
                                     <td>
                                         {a.statut === 'en_attente' && (
-                                            <div style={{ display: 'flex', gap: 6 }}>
-                                                <button className="tbl-btn green" onClick={() => updateStatus(a.id, 'confirmé')}>✓</button>
-                                                <button className="tbl-btn red"   onClick={() => updateStatus(a.id, 'annulé')}>✕</button>
-                                            </div>
-                                        )}
-                                        {a.statut === 'confirmé' && (
-                                            <button className="tbl-btn purple" onClick={() => updateStatus(a.id, 'terminé')}>✔ Terminé</button>
+                                            <button className="tbl-btn green" onClick={() => openPriceModal(a)}>
+                                                ✓ Confirmer & fixer prix
+                                            </button>
                                         )}
                                     </td>
                                 </tr>
@@ -308,9 +262,14 @@ export default function DoctorDashboard() {
                 <div className="empty-state">Aucun patient pour l'instant.</div>
             ) : (
                 <div className="table-wrap">
-                    <table>
+                    <table className="patients-table">
                         <thead>
-                            <tr><th>Nom</th><th>Email</th><th>Téléphone</th><th>Dernière visite</th> </tr>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Email</th>
+                                <th>Téléphone</th>
+                                <th>Dernière visite</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {patients.map((p, i) => (
@@ -319,7 +278,7 @@ export default function DoctorDashboard() {
                                     <td>{p.email}</td>
                                     <td>{p.telephone || '-'}</td>
                                     <td>{formatDate(p.derniere_visite)}</td>
-                                 </tr>
+                                </tr>
                             ))}
                         </tbody>
                     </table>
@@ -329,199 +288,26 @@ export default function DoctorDashboard() {
     );
 
     const renderAI = () => (
-        <>
-            <div className="ai-content">
-                <div className="ai-card" onClick={() => setShowSymptomsModal(true)}>
-                    <div className="ai-icon">🧠</div>
-                    <div className="ai-info">
-                        <h4>Analyse des symptômes</h4>
-                        <p>L'IA analyse les symptômes des patients et propose des diagnostics probables.</p>
-                        <button className="btn-primary-sm">Utiliser →</button>
-                    </div>
-                </div>
-                <div className="ai-card" onClick={() => setShowReportModal(true)}>
-                    <div className="ai-icon">📋</div>
-                    <div className="ai-info">
-                        <h4>Génération de rapports médicaux</h4>
-                        <p>Générez automatiquement des rapports détaillés pour vos patients.</p>
-                        <button className="btn-primary-sm">Générer →</button>
-                    </div>
-                </div>
-                <div className="ai-card" onClick={() => setShowChatbotModal(true)}>
-                    <div className="ai-icon">💬</div>
-                    <div className="ai-info">
-                        <h4>Chatbot médical</h4>
-                        <p>Assistant virtuel pour répondre aux questions des patients 24/7.</p>
-                        <button className="btn-primary-sm">Démarrer →</button>
-                    </div>
-                </div>
-                <div className="ai-card" onClick={() => setShowRiskModal(true)}>
-                    <div className="ai-icon">📊</div>
-                    <div className="ai-info">
-                        <h4>Score de risque patient</h4>
-                        <p>Évaluez les risques médicaux et obtenez des recommandations.</p>
-                        <button className="btn-primary-sm">Analyser →</button>
-                    </div>
+        <div className="card">
+            <div className="card-header">
+                <h3>🤖 Outils IA</h3>
+                <span className="badge badge-purple">Bientôt disponible</span>
+            </div>
+            <div className="coming-soon">
+                <div className="coming-soon-icon">🚧</div>
+                <h4>Module IA en développement</h4>
+                <p>L'intelligence artificielle vous permettra bientôt de :</p>
+                <ul className="coming-soon-list">
+                    <li>🔍 Analyser les symptômes des patients</li>
+                    <li>📋 Générer des rapports médicaux</li>
+                    <li>💬 Chatbot pour répondre aux patients</li>
+                    <li>📊 Évaluer les scores de risque</li>
+                </ul>
+                <div className="coming-soon-note">
+                    ⚡ Cette fonctionnalité sera bientôt disponible.
                 </div>
             </div>
-            <div className="ai-stats">
-                <div className="ai-stat-item">
-                    <div className="ai-stat-value">24/7</div>
-                    <div className="ai-stat-label">Disponibilité</div>
-                </div>
-                <div className="ai-stat-item">
-                    <div className="ai-stat-value">98%</div>
-                    <div className="ai-stat-label">Précision</div>
-                </div>
-                <div className="ai-stat-item">
-                    <div className="ai-stat-value">Temps réel</div>
-                    <div className="ai-stat-label">Analyse</div>
-                </div>
-            </div>
-
-            {/* Modal Analyse des symptômes */}
-            {showSymptomsModal && (
-                <div className="modal-overlay" onClick={() => setShowSymptomsModal(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>🧠 Analyse des symptômes</h3>
-                            <button className="modal-close" onClick={() => setShowSymptomsModal(false)}>✕</button>
-                        </div>
-                        <form onSubmit={handleAnalyzeSymptoms}>
-                            <div className="form-group">
-                                <label>Nom du patient</label>
-                                <input type="text" placeholder="Nom du patient" value={symptomsForm.patientName} onChange={(e) => setSymptomsForm({ ...symptomsForm, patientName: e.target.value })} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Symptômes (décrivez en détail)</label>
-                                <textarea rows="4" placeholder="Ex: Fièvre, toux, maux de tête depuis 3 jours..." value={symptomsForm.symptoms} onChange={(e) => setSymptomsForm({ ...symptomsForm, symptoms: e.target.value })} required />
-                            </div>
-                            <button type="submit" className="btn-primary" disabled={aiLoading}>
-                                {aiLoading ? 'Analyse en cours...' : 'Analyser les symptômes'}
-                            </button>
-                        </form>
-                        {aiResult && aiResult.type === 'symptoms' && (
-                            <div className="ai-result">
-                                <h4>📊 Résultat de l'analyse</h4>
-                                <p><strong>Diagnostic probable:</strong> {aiResult.diagnostic}</p>
-                                <p><strong>Probabilité:</strong> {aiResult.probability}</p>
-                                <p><strong>Niveau de gravité:</strong> {aiResult.severity}</p>
-                                <p><strong>Recommandations:</strong></p>
-                                <ul>
-                                    {aiResult.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Génération de rapport */}
-            {showReportModal && (
-                <div className="modal-overlay" onClick={() => setShowReportModal(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>📋 Génération de rapport médical</h3>
-                            <button className="modal-close" onClick={() => setShowReportModal(false)}>✕</button>
-                        </div>
-                        <form onSubmit={handleGenerateReport}>
-                            <div className="form-group">
-                                <label>Nom du patient</label>
-                                <input type="text" placeholder="Nom du patient" value={reportForm.patientName} onChange={(e) => setReportForm({ ...reportForm, patientName: e.target.value })} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Diagnostic</label>
-                                <input type="text" placeholder="Diagnostic établi" value={reportForm.diagnosis} onChange={(e) => setReportForm({ ...reportForm, diagnosis: e.target.value })} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Traitement prescrit</label>
-                                <textarea rows="3" placeholder="Médicaments, posologie, durée..." value={reportForm.treatment} onChange={(e) => setReportForm({ ...reportForm, treatment: e.target.value })} required />
-                            </div>
-                            <button type="submit" className="btn-primary" disabled={aiLoading}>
-                                {aiLoading ? 'Génération...' : 'Générer le rapport'}
-                            </button>
-                        </form>
-                        {aiResult && aiResult.type === 'report' && (
-                            <div className="ai-result">
-                                <h4>📄 Rapport généré</h4>
-                                <pre>{aiResult.report}</pre>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Chatbot médical */}
-            {showChatbotModal && (
-                <div className="modal-overlay" onClick={() => setShowChatbotModal(false)}>
-                    <div className="modal-content chatbot-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>💬 Chatbot médical</h3>
-                            <button className="modal-close" onClick={() => setShowChatbotModal(false)}>✕</button>
-                        </div>
-                        <div className="chatbot-container">
-                            <div className="chat-messages">
-                                {chatHistory.length === 0 && (
-                                    <div className="chat-welcome">
-                                        <p>🤖 Bonjour ! Je suis votre assistant médical.<br />Posez-moi vos questions sur les symptômes, traitements, ou conseils médicaux.</p>
-                                    </div>
-                                )}
-                                {chatHistory.map((msg, idx) => (
-                                    <div key={idx} className={`chat-message ${msg.sender}`}>
-                                        <div className="message-bubble">{msg.text}</div>
-                                        <div className="message-time">{msg.time}</div>
-                                    </div>
-                                ))}
-                                {aiLoading && <div className="chat-typing">🤖 L'assistant écrit...</div>}
-                            </div>
-                            <div className="chat-input-area">
-                                <input type="text" placeholder="Écrivez votre message..." value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} />
-                                <button onClick={handleSendMessage}>Envoyer</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Score de risque */}
-            {showRiskModal && (
-                <div className="modal-overlay" onClick={() => setShowRiskModal(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>📊 Score de risque patient</h3>
-                            <button className="modal-close" onClick={() => setShowRiskModal(false)}>✕</button>
-                        </div>
-                        <form onSubmit={handleAnalyzeRisk}>
-                            <div className="form-group">
-                                <label>Nom du patient</label>
-                                <input type="text" placeholder="Nom du patient" value={riskForm.patientName} onChange={(e) => setRiskForm({ ...riskForm, patientName: e.target.value })} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Âge</label>
-                                <input type="number" placeholder="Âge du patient" value={riskForm.age} onChange={(e) => setRiskForm({ ...riskForm, age: e.target.value })} required />
-                            </div>
-                            <div className="form-group">
-                                <label>Symptômes / Antécédents</label>
-                                <textarea rows="3" placeholder="Décrivez les symptômes ou antécédents médicaux..." value={riskForm.symptoms} onChange={(e) => setRiskForm({ ...riskForm, symptoms: e.target.value })} required />
-                            </div>
-                            <button type="submit" className="btn-primary" disabled={aiLoading}>
-                                {aiLoading ? 'Calcul en cours...' : 'Évaluer le risque'}
-                            </button>
-                        </form>
-                        {aiResult && aiResult.type === 'risk' && (
-                            <div className="ai-result">
-                                <h4>📊 Score de risque</h4>
-                                <p><strong>Patient:</strong> {aiResult.patientName}</p>
-                                <p><strong>Âge:</strong> {aiResult.age} ans</p>
-                                <p><strong>Score de risque:</strong> <span className={`risk-score risk-${aiResult.riskLevel.toLowerCase()}`}>{aiResult.riskScore}/100</span></p>
-                                <p><strong>Niveau:</strong> <span className={`risk-badge risk-${aiResult.riskLevel.toLowerCase()}`}>{aiResult.riskLevel}</span></p>
-                                <p><strong>Recommandation:</strong> {aiResult.recommendation}</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-        </>
+        </div>
     );
 
     const renderContent = () => {
@@ -568,6 +354,38 @@ export default function DoctorDashboard() {
                 </div>
                 {renderContent()}
             </main>
+
+            {/* Modal pour fixer le prix */}
+            {showPriceModal && selectedAppointment && (
+                <div className="modal-overlay" onClick={() => setShowPriceModal(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>💰 Fixer le prix de la consultation</h3>
+                            <button className="modal-close" onClick={() => setShowPriceModal(false)}>✕</button>
+                        </div>
+                        <div className="form-group">
+                            <label>Patient</label>
+                            <input type="text" value={`${selectedAppointment.patient_prenom} ${selectedAppointment.patient_nom}`} disabled className="disabled-input" />
+                        </div>
+                        <div className="form-group">
+                            <label>Date</label>
+                            <input type="text" value={formatDate(selectedAppointment.date_heure)} disabled className="disabled-input" />
+                        </div>
+                        <div className="form-group">
+                            <label>Motif</label>
+                            <input type="text" value={selectedAppointment.motif || '-'} disabled className="disabled-input" />
+                        </div>
+                        <div className="form-group">
+                            <label>💰 Prix de la consultation (€)</label>
+                            <input type="number" placeholder="Entrez le montant" value={prixInput} onChange={(e) => setPrixInput(e.target.value)} min="0" step="10" required autoFocus />
+                        </div>
+                        <div className="modal-buttons">
+                            <button className="btn-secondary" onClick={() => setShowPriceModal(false)}>Annuler</button>
+                            <button className="btn-primary" onClick={handleConfirmWithPrice}>Confirmer et notifier le patient</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

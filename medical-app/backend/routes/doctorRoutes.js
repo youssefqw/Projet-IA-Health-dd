@@ -67,6 +67,44 @@ router.get('/appointments', verifyToken, requireRole('medecin'), async (req, res
     }
 });
 
+// PUT /api/doctors/appointment/:id/confirm — confirm appointment with price
+router.put('/appointment/:id/confirm', verifyToken, requireRole('medecin'), async (req, res) => {
+    const { id } = req.params;
+    const { prix } = req.body;
+    const medecin_id = req.user.id;
+
+    if (!prix || prix <= 0) {
+        return res.status(400).json({ message: 'Le prix doit être valide et supérieur à 0' });
+    }
+
+    try {
+        // Vérifier que le rendez-vous appartient bien au médecin
+        const [appointment] = await db.execute(
+            'SELECT * FROM appointments WHERE id = ? AND medecin_id = ?',
+            [id, medecin_id]
+        );
+
+        if (appointment.length === 0) {
+            return res.status(404).json({ message: 'Rendez-vous non trouvé' });
+        }
+
+        // Mettre à jour le rendez-vous
+        await db.execute(
+            'UPDATE appointments SET statut = "confirmé", prix_medecin = ? WHERE id = ? AND medecin_id = ?',
+            [prix, id, medecin_id]
+        );
+
+        res.json({ 
+            message: 'Rendez-vous confirmé avec succès', 
+            prix: prix,
+            appointment_id: id
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
 // GET /api/doctors/list — public list (accessible to patients too)
 router.get('/list', verifyToken, async (req, res) => {
     try {

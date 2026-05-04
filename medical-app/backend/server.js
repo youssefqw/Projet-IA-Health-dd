@@ -9,6 +9,7 @@ const doctorRoutes      = require('./routes/doctorRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const aiRoutes          = require('./routes/aiRoutes');
 const adminRoutes       = require('./routes/adminRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 
 // Public routes
 app.use('/api/auth', authRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Protected routes
 app.use('/api/patients',     patientRoutes);
