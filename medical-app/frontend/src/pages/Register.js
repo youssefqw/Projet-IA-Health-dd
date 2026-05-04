@@ -1,47 +1,52 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import './Register.css';
 
-const ROLES = [
-    { value: 'patient', icon: '🧑‍⚕️', label: 'Patient' },
-    { value: 'medecin', icon: '👨‍⚕️', label: 'Médecin' },
-    { value: 'admin', icon: '🛡️', label: 'Admin' },
-];
-
 export default function Register() {
-    const [form, setForm] = useState({ nom: '', prenom: '', email: '', password: '', telephone: '', role: 'patient', specialite: '' });
-    const [specialites, setSpecialites] = useState([]);
+    const [form, setForm] = useState({ 
+        nom: '', 
+        prenom: '', 
+        email: '', 
+        password: '', 
+        telephone: '', 
+        role: 'patient'  // Rôle fixe = patient
+    });
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
     const navigate = useNavigate();
-
-    useEffect(() => {
-        fetch('http://localhost:5000/api/auth/specialites')
-            .then(r => r.json())
-            .then(setSpecialites)
-            .catch(() => {});
-    }, []);
 
     const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
 
     const handleSubmit = async e => {
         e.preventDefault();
         setError('');
+        setSuccess('');
         setLoading(true);
+        
         try {
             const res = await fetch('http://localhost:5000/api/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form),
             });
+            
             const data = await res.json();
-            if (!res.ok) { setError(data.message); return; }
-            login(data.user, data.token);
-            const routes = { patient: '/dashboard/patient', medecin: '/dashboard/doctor', admin: '/dashboard/admin' };
-            navigate(routes[data.user.role] || '/dashboard/patient');
-        } catch {
+            
+            if (!res.ok) { 
+                setError(data.message); 
+                return; 
+            }
+            
+            // ✅ Inscription réussie
+            setSuccess('✅ Compte créé avec succès ! Redirection vers la page de connexion...');
+            
+            // Rediriger vers login après 2 secondes
+            setTimeout(() => {
+                navigate('/login');
+            }, 2000);
+            
+        } catch (error) {
             setError('Erreur de connexion au serveur.');
         } finally {
             setLoading(false);
@@ -57,7 +62,7 @@ export default function Register() {
                 </div>
                 <div className="auth-hero">
                     <h1>Rejoignez<br /><span>MedCare AI</span></h1>
-                    <p>Créez votre compte et accédez à une plateforme médicale intelligente et sécurisée.</p>
+                    <p>Créez votre compte patient et accédez à une plateforme médicale intelligente et sécurisée.</p>
                 </div>
                 <div className="stats-row">
                     <div className="stat-item">
@@ -75,26 +80,14 @@ export default function Register() {
                 </div>
             </div>
 
-            <div className="auth-right wide">
+            <div className="auth-right">
                 <div className="auth-form-header">
-                    <h2>Créer un compte ✨</h2>
-                    <p>Choisissez votre rôle et remplissez le formulaire</p>
+                    <h2>Créer un compte patient ✨</h2>
+                    <p>Inscrivez-vous pour accéder à vos services médicaux</p>
                 </div>
 
                 {error && <div className="error-msg">⚠️ {error}</div>}
-
-                <div className="role-selector">
-                    {ROLES.map(r => (
-                        <div
-                            key={r.value}
-                            className={`role-card ${form.role === r.value ? 'active' : ''}`}
-                            onClick={() => setForm({ ...form, role: r.value })}
-                        >
-                            <div className="role-icon">{r.icon}</div>
-                            <div className="role-label">{r.label}</div>
-                        </div>
-                    ))}
-                </div>
+                {success && <div className="success-msg">✅ {success}</div>}
 
                 <form onSubmit={handleSubmit}>
                     <div className="form-row">
@@ -139,23 +132,8 @@ export default function Register() {
                         </div>
                     </div>
 
-                    {form.role === 'medecin' && (
-                        <div className="form-group">
-                            <label>Spécialité</label>
-                            <div className="input-wrap">
-                                <span className="icon">🩺</span>
-                                <select name="specialite" value={form.specialite} onChange={handleChange} required>
-                                    <option value="">Choisir une spécialité</option>
-                                    {specialites.map(s => (
-                                        <option key={s.id} value={s.nom}>{s.nom}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    )}
-
                     <button className="btn-primary" type="submit" disabled={loading}>
-                        {loading ? 'Création...' : 'Créer mon compte →'}
+                        {loading ? 'Création...' : 'Créer mon compte patient →'}
                     </button>
                 </form>
 

@@ -1,5 +1,26 @@
+:root {
+    --primary: #0ea5e9;
+    --primary-dark: #0284c7;
+    --accent: #8b5cf6;
+    --dark: #0f172a;
+    --dark-2: #1e293b;
+    --dark-3: #334155;
+    --gray: #64748b;
+    --gray-light: #94a3b8;
+    --border: #e2e8f0;
+    --bg: #f8fafc;
+    --white: #ffffff;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --radius: 20px;
+    --radius-sm: 12px;
+}
+
 .settings-wrapper {
     max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
 }
 
 /* Profile card at top */
@@ -28,9 +49,31 @@
     box-shadow: 0 4px 20px rgba(14,165,233,0.4);
 }
 
-.settings-name  { font-size: 20px; font-weight: 800; color: var(--white); }
-.settings-role  { font-size: 13px; color: var(--primary); font-weight: 600; margin-top: 4px; }
-.settings-email { font-size: 13px; color: var(--gray-light); margin-top: 4px; }
+.settings-identity {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.settings-name { 
+    font-size: 20px; 
+    font-weight: 800; 
+    color: var(--white); 
+    line-height: 1.3;
+}
+
+.settings-role { 
+    font-size: 13px; 
+    color: var(--primary); 
+    font-weight: 600; 
+    margin-top: 4px; 
+}
+
+.settings-email { 
+    font-size: 13px; 
+    color: var(--gray-light); 
+    margin-top: 4px; 
+}
 
 /* Two-column grid */
 .settings-grid {
@@ -41,7 +84,31 @@
 }
 
 @media (max-width: 860px) {
-    .settings-grid { grid-template-columns: 1fr; }
+    .settings-grid { 
+        grid-template-columns: 1fr; 
+    }
+}
+
+/* Card styles */
+.card {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border: 1px solid var(--border);
+}
+
+.card-header {
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+}
+
+.card-header h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--dark);
+    margin: 0;
 }
 
 /* Form fields */
@@ -65,8 +132,7 @@
     margin-bottom: 7px;
 }
 
-.settings-field input,
-.settings-field select {
+.settings-field input {
     width: 100%;
     padding: 12px 14px;
     border: 2px solid var(--border);
@@ -78,8 +144,7 @@
     transition: all 0.2s;
 }
 
-.settings-field input:focus,
-.settings-field select:focus {
+.settings-field input:focus {
     border-color: var(--primary);
     background: var(--white);
     box-shadow: 0 0 0 3px rgba(14,165,233,0.1);
@@ -97,13 +162,22 @@
     color: var(--gray);
     margin-top: 5px;
 }
-.hint-ok  { color: var(--success) !important; font-weight: 600; }
-.hint-err { color: var(--danger)  !important; font-weight: 600; }
+
+.hint-ok { 
+    color: var(--success) !important; 
+    font-weight: 600; 
+}
+
+.hint-err { 
+    color: var(--danger) !important; 
+    font-weight: 600; 
+}
 
 /* Password input with icon */
 .pass-input-wrap {
     position: relative;
 }
+
 .pass-icon {
     position: absolute;
     left: 13px;
@@ -112,6 +186,7 @@
     font-size: 16px;
     pointer-events: none;
 }
+
 .pass-input-wrap input {
     padding-left: 42px !important;
 }
@@ -122,27 +197,59 @@
     align-items: center;
     gap: 10px;
     margin-bottom: 18px;
+    flex-wrap: wrap;
 }
-.pass-strength-label { font-size: 12px; color: var(--gray); white-space: nowrap; }
+
+.pass-strength-label { 
+    font-size: 12px; 
+    color: var(--gray); 
+    white-space: nowrap; 
+}
+
 .pass-strength-bar {
     flex: 1;
     height: 6px;
     background: var(--border);
     border-radius: 10px;
     overflow: hidden;
+    min-width: 100px;
 }
+
 .pass-strength-fill {
     height: 100%;
     border-radius: 10px;
     transition: width 0.3s, background 0.3s;
 }
-.pass-strength-fill.weak   { background: var(--danger); }
-.pass-strength-fill.medium { background: var(--warning); }
-.pass-strength-fill.strong { background: var(--success); }
-.pass-strength-text { font-size: 12px; font-weight: 700; white-space: nowrap; }
-.pass-strength-text.weak   { color: var(--danger); }
-.pass-strength-text.medium { color: var(--warning); }
-.pass-strength-text.strong { color: var(--success); }
+
+.pass-strength-fill.weak { 
+    background: var(--danger); 
+}
+
+.pass-strength-fill.medium { 
+    background: var(--warning); 
+}
+
+.pass-strength-fill.strong { 
+    background: var(--success); 
+}
+
+.pass-strength-text { 
+    font-size: 12px; 
+    font-weight: 700; 
+    white-space: nowrap; 
+}
+
+.pass-strength-text.weak { 
+    color: var(--danger); 
+}
+
+.pass-strength-text.medium { 
+    color: var(--warning); 
+}
+
+.pass-strength-text.strong { 
+    color: var(--success); 
+}
 
 /* Save button */
 .settings-save-btn {
@@ -159,8 +266,17 @@
     box-shadow: 0 4px 14px rgba(14,165,233,0.3);
     margin-top: 4px;
 }
-.settings-save-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(14,165,233,0.4); }
-.settings-save-btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+
+.settings-save-btn:hover { 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(14,165,233,0.4); 
+}
+
+.settings-save-btn:disabled { 
+    opacity: 0.7; 
+    cursor: not-allowed; 
+    transform: none; 
+}
 
 /* Feedback messages */
 .settings-msg {
@@ -170,5 +286,46 @@
     font-weight: 500;
     margin-bottom: 18px;
 }
-.settings-msg.success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-.settings-msg.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+.settings-msg.success { 
+    background: #d1fae5; 
+    color: #065f46; 
+    border: 1px solid #6ee7b7; 
+}
+
+.settings-msg.error { 
+    background: #fef2f2; 
+    color: #991b1b; 
+    border: 1px solid #fecaca; 
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .settings-profile-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+        padding: 20px;
+    }
+    
+    .settings-identity {
+        align-items: center;
+    }
+    
+    .settings-form-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    
+    .card {
+        padding: 18px;
+    }
+    
+    .pass-strength {
+        flex-wrap: wrap;
+    }
+    
+    .pass-strength-label {
+        width: 100%;
+    }
+}

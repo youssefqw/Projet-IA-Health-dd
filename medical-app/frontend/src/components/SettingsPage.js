@@ -6,7 +6,6 @@ export default function SettingsPage() {
     const { user, token, login, authFetch } = useAuth();
 
     const [profile, setProfile] = useState({ nom: '', prenom: '', telephone: '', specialite: '' });
-    const [specialites, setSpecialites] = useState([]);
     const [profileMsg, setProfileMsg] = useState({ text: '', type: '' });
     const [profileLoading, setProfileLoading] = useState(false);
 
@@ -15,8 +14,14 @@ export default function SettingsPage() {
     const [passLoading, setPassLoading] = useState(false);
 
     useEffect(() => {
-        if (user) setProfile({ nom: user.nom || '', prenom: user.prenom || '', telephone: user.telephone || '', specialite: user.specialite || '' });
-        fetch('http://localhost:5000/api/auth/specialites').then(r => r.json()).then(setSpecialites).catch(() => {});
+        if (user) {
+            setProfile({ 
+                nom: user.nom || '', 
+                prenom: user.prenom || '', 
+                telephone: user.telephone || '',
+                specialite: user.specialite || ''
+            });
+        }
     }, [user]);
 
     const handleProfileSave = async e => {
@@ -26,11 +31,17 @@ export default function SettingsPage() {
         try {
             const res = await authFetch('http://localhost:5000/api/auth/profile', {
                 method: 'PUT',
-                body: JSON.stringify(profile),
+                body: JSON.stringify({
+                    nom: profile.nom,
+                    prenom: profile.prenom,
+                    telephone: profile.telephone
+                }),
             });
             const data = await res.json();
-            if (!res.ok) { setProfileMsg({ text: data.message, type: 'error' }); return; }
-            // Update AuthContext so sidebar name refreshes instantly
+            if (!res.ok) { 
+                setProfileMsg({ text: data.message, type: 'error' }); 
+                return; 
+            }
             login(data.user, token);
             setProfileMsg({ text: '✅ Profil mis à jour avec succès !', type: 'success' });
         } catch {
@@ -58,7 +69,10 @@ export default function SettingsPage() {
                 body: JSON.stringify({ currentPassword: passwords.currentPassword, newPassword: passwords.newPassword }),
             });
             const data = await res.json();
-            if (!res.ok) { setPassMsg({ text: data.message, type: 'error' }); return; }
+            if (!res.ok) { 
+                setPassMsg({ text: data.message, type: 'error' }); 
+                return; 
+            }
             setPassMsg({ text: '✅ Mot de passe modifié avec succès !', type: 'success' });
             setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
         } catch {
@@ -134,15 +148,13 @@ export default function SettingsPage() {
                         {user?.role === 'medecin' && (
                             <div className="settings-field">
                                 <label>Spécialité</label>
-                                <select
-                                    value={profile.specialite}
-                                    onChange={e => setProfile({ ...profile, specialite: e.target.value })}
-                                >
-                                    <option value="">Choisir une spécialité</option>
-                                    {specialites.map(s => (
-                                        <option key={s.id} value={s.nom}>{s.nom}</option>
-                                    ))}
-                                </select>
+                                <input 
+                                    type="text" 
+                                    value={profile.specialite || 'Non définie'} 
+                                    disabled 
+                                    className="disabled-input"
+                                />
+                                <span className="field-hint">La spécialité ne peut pas être modifiée.</span>
                             </div>
                         )}
 
