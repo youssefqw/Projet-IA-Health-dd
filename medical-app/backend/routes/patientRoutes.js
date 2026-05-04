@@ -100,10 +100,16 @@ router.post('/appointments/create', verifyToken, requireRole('patient'), async (
             [patient_id, medecin_id, date_heure, motif || null]
         );
 
-        res.status(201).json({ 
-            message: 'Rendez-vous créé avec succès', 
-            id: result.insertId 
-        });
+        // Notifier le médecin d'un nouveau rendez-vous
+        const [patientInfo] = await db.execute('SELECT nom, prenom FROM users WHERE id = ?', [patient_id]);
+        await db.execute(
+            'INSERT INTO notifications (user_id, type, message, appointment_id) VALUES (?, ?, ?, ?)',
+            [medecin_id, 'nouveau_rdv',
+             `📅 Nouveau rendez-vous de ${patientInfo[0].prenom} ${patientInfo[0].nom} le ${new Date(date_heure).toLocaleDateString('fr-FR')}${motif ? ` — ${motif}` : ''}`,
+             result.insertId]
+        );
+
+        res.status(201).json({ message: 'Rendez-vous créé avec succès', id: result.insertId });
     } catch (error) {
         console.error('Erreur création rendez-vous:', error);
         res.status(500).json({ message: 'Erreur serveur', error: error.message });
@@ -164,6 +170,29 @@ router.put('/appointments/:id/cancel', verifyToken, requireRole('patient'), asyn
         } else {
             res.status(400).json({ message: 'Impossible d\'annuler ce rendez-vous' });
         }
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// GET /api/patients/notifications
+router.get('/notifications', verifyToken, requireRole('patient'), async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+            [req.user.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/patients/notifications/read
+router.put('/notifications/read', verifyToken, requireRole('patient'), async (req, res) => {
+    try {
+        await db.execute('UPDATE notifications SET lu = 1 WHERE user_id = ?', [req.user.id]);
+        res.json({ message: 'Notifications lues' });
     } catch (err) {
         res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }

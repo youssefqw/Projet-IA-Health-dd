@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
@@ -20,15 +20,12 @@ function formatDate(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
 function formatTime(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
-
 function isToday(dt) {
-    const d = new Date(dt);
-    const t = new Date();
+    const d = new Date(dt), t = new Date();
     return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
 }
 
@@ -37,14 +34,18 @@ export default function DoctorDashboard() {
     const navigate = useNavigate();
     const [active, setActive] = useState('home');
 
-    // États pour le modal de confirmation avec prix
+    // Notifications
+    const [notifications, setNotifications] = useState([]);
+    const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+    // Modal confirmer avec prix
     const [showPriceModal, setShowPriceModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState(null);
     const [prixInput, setPrixInput] = useState('');
+    const [modalMsg, setModalMsg] = useState('');
 
-    // États pour les paiements
+    // Stats paiements
     const [paymentStats, setPaymentStats] = useState({ stats: { total: 0, nombre: 0, moyenne: 0, mois_en_cours: 0 }, recent: [] });
-    const [loadingPayments, setLoadingPayments] = useState(false);
 
     const { data: appointments, loading: loadAppts, refetch: refetchAppts } = useFetch('http://localhost:5000/api/doctors/appointments');
     const { data: patients,     loading: loadPats  }                        = useFetch('http://localhost:5000/api/doctors/patients');
@@ -54,51 +55,75 @@ export default function DoctorDashboard() {
 
     const todayAppts   = appointments?.filter(a => isToday(a.date_heure)) || [];
     const pendingAppts = appointments?.filter(a => a.statut === 'en_attente') || [];
+    const unreadCount  = notifications.filter(n => !n.lu).length;
 
-    // Charger les statistiques de paiement
-    const fetchPaymentStats = async () => {
-        setLoadingPayments(true);
+    const fetchNotifications = useCallback(async () => {
+        try {
+            const res = await authFetch('http://localhost:5000/api/doctors/notifications');
+            if (res.ok) setNotifications(await res.json());
+        } catch {}
+    }, [authFetch]);
+
+    const fetchPaymentStats = useCallback(async () => {
         try {
             const res = await authFetch('http://localhost:5000/api/payments/doctor/stats');
-            const data = await res.json();
-            setPaymentStats(data);
-        } catch (error) {
-            console.error('Erreur chargement stats paiements:', error);
-        } finally {
-            setLoadingPayments(false);
+            if (res.ok) setPaymentStats(await res.json());
+        } catch {}
+    }, [authFetch]);
+
+    useEffect(() => {
+        fetchNotifications();
+        fetchPaymentStats();
+        const interval = setInterval(fetchNotifications, 15000);
+        return () => clearInterval(interval);
+    }, [fetchNotifications, fetchPaymentStats]);
+
+    const markNotificationsRead = async () => {
+        setShowNotifPanel(v => !v);
+        if (unreadCount > 0) {
+            await authFetch('http://localhost:5000/api/doctors/notifications/read', { method: 'PUT' });
+            setNotifications(prev => prev.map(n => ({ ...n, lu: 1 })));
         }
     };
 
-    useEffect(() => {
-        fetchPaymentStats();
-    }, []);
-
-    // Ouvrir modal pour fixer le prix
-    const openPriceModal = (appointment) => {
-        setSelectedAppointment(appointment);
+    // Ouvrir modal confirmation avec prix
+    const openConfirmModal = (appt) => {
+        setSelectedAppointment(appt);
         setPrixInput('');
+        setModalMsg('');
         setShowPriceModal(true);
     };
 
-    // Confirmer le rendez-vous avec prix
+    // Confirmer RDV avec prix → notifie patient
     const handleConfirmWithPrice = async () => {
-        if (!prixInput || prixInput <= 0) {
-            alert('Veuillez entrer un prix valide');
-            return;
-        }
-        
+        if (!prixInput || prixInput <= 0) { setModalMsg('Veuillez entrer un prix valide'); return; }
         try {
-            await authFetch(`http://localhost:5000/api/doctors/appointment/${selectedAppointment.id}/confirm`, {
+            const res = await authFetch(`http://localhost:5000/api/doctors/appointment/${selectedAppointment.id}/confirm`, {
                 method: 'PUT',
                 body: JSON.stringify({ prix: parseFloat(prixInput) }),
             });
-            
+            if (!res.ok) { const d = await res.json(); setModalMsg(d.message); return; }
             setShowPriceModal(false);
             refetchAppts();
             fetchPaymentStats();
-        } catch (error) {
-            console.error('Erreur:', error);
-        }
+        } catch { setModalMsg('Erreur de connexion'); }
+    };
+
+    // Refuser RDV → notifie patient
+    const handleReject = async (appt) => {
+        if (!window.confirm(`Refuser le rendez-vous de ${appt.patient_prenom} ${appt.patient_nom} ?`)) return;
+        try {
+            await authFetch(`http://localhost:5000/api/doctors/appointment/${appt.id}/reject`, { method: 'PUT' });
+            refetchAppts();
+        } catch {}
+    };
+
+    // Demander paiement → notifie patient
+    const handleRequestPayment = async (appt) => {
+        try {
+            const res = await authFetch(`http://localhost:5000/api/doctors/appointment/${appt.id}/request-payment`, { method: 'PUT' });
+            if (res.ok) refetchAppts();
+        } catch {}
     };
 
     const renderHome = () => (
@@ -107,28 +132,28 @@ export default function DoctorDashboard() {
                 <div className="payment-card">
                     <div className="payment-card-icon blue">💰</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.total || 0}€`}</div>
+                        <div className="payment-card-value">{`${paymentStats.stats?.total || 0}€`}</div>
                         <div className="payment-card-title">Total des revenus</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon green">📊</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{loadingPayments ? '...' : paymentStats.stats?.nombre || 0}</div>
+                        <div className="payment-card-value">{paymentStats.stats?.nombre || 0}</div>
                         <div className="payment-card-title">Consultations payées</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon purple">💶</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.moyenne || 0}€`}</div>
-                        <div className="payment-card-title">Moyenne par consultation</div>
+                        <div className="payment-card-value">{`${paymentStats.stats?.moyenne || 0}€`}</div>
+                        <div className="payment-card-title">Moyenne / consultation</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon orange">📅</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.mois_en_cours || 0}€`}</div>
+                        <div className="payment-card-value">{`${paymentStats.stats?.mois_en_cours || 0}€`}</div>
                         <div className="payment-card-title">Ce mois-ci</div>
                     </div>
                 </div>
@@ -168,25 +193,28 @@ export default function DoctorDashboard() {
             <div className="content-grid">
                 <div className="card">
                     <div className="card-header">
-                        <h3>📅 Planning du jour</h3>
-                        <span className="badge badge-blue">{todayAppts.length} consultations</span>
+                        <h3>⏳ Rendez-vous en attente</h3>
+                        <span className="badge badge-orange">{pendingAppts.length} à traiter</span>
                     </div>
-                    {loadAppts ? <div className="loading-text">Chargement...</div> : todayAppts.length === 0 ? (
-                        <div className="empty-state">Aucune consultation aujourd'hui.</div>
+                    {loadAppts ? <div className="loading-text">Chargement...</div> : pendingAppts.length === 0 ? (
+                        <div className="empty-state">Aucun rendez-vous en attente.</div>
                     ) : (
                         <div className="appt-list">
-                            {todayAppts.map((a, i) => (
+                            {pendingAppts.slice(0, 4).map((a, i) => (
                                 <div className="appt-item" key={i}>
                                     <div className="appt-time">
                                         <div className="time">{formatTime(a.date_heure)}</div>
-                                        <div className="date">Aujourd'hui</div>
+                                        <div className="date">{formatDate(a.date_heure)}</div>
                                     </div>
                                     <div className="appt-divider" />
                                     <div className="appt-info">
                                         <div className="patient-name">{a.patient_prenom} {a.patient_nom}</div>
                                         <div className="reason">{a.motif || 'Consultation'}</div>
                                     </div>
-                                    <span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button className="tbl-btn green" onClick={() => openConfirmModal(a)}>✓ Confirmer</button>
+                                        <button className="tbl-btn red" onClick={() => handleReject(a)}>✗ Refuser</button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -216,14 +244,8 @@ export default function DoctorDashboard() {
                     <table className="appointments-table">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Heure</th>
-                                <th>Patient</th>
-                                <th>Téléphone</th>
-                                <th>Motif</th>
-                                <th>Prix</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
+                                <th>Date</th><th>Heure</th><th>Patient</th><th>Tél.</th>
+                                <th>Motif</th><th>Prix</th><th>Statut</th><th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -235,12 +257,19 @@ export default function DoctorDashboard() {
                                     <td>{a.patient_tel || '-'}</td>
                                     <td>{a.motif || '-'}</td>
                                     <td>{a.prix_medecin ? `${a.prix_medecin}€` : '-'}</td>
-                                    <td><span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span></td>
+                                    <td><span className={`badge ${STATUS_BADGE[a.statut] || 'badge-orange'}`}>{STATUS_LABEL[a.statut] || a.statut}</span></td>
                                     <td>
                                         {a.statut === 'en_attente' && (
-                                            <button className="tbl-btn green" onClick={() => openPriceModal(a)}>
-                                                ✓ Confirmer & fixer prix
-                                            </button>
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                <button className="tbl-btn green" onClick={() => openConfirmModal(a)}>✓ Confirmer</button>
+                                                <button className="tbl-btn red" onClick={() => handleReject(a)}>✗ Refuser</button>
+                                            </div>
+                                        )}
+                                        {a.statut === 'confirmé' && !a.paiement_requis && (
+                                            <button className="tbl-btn blue" onClick={() => handleRequestPayment(a)}>💳 Demander paiement</button>
+                                        )}
+                                        {a.statut === 'confirmé' && a.paiement_requis === 1 && (
+                                            <span className="badge badge-orange">⏳ Paiement en attente</span>
                                         )}
                                     </td>
                                 </tr>
@@ -263,14 +292,7 @@ export default function DoctorDashboard() {
             ) : (
                 <div className="table-wrap">
                     <table className="patients-table">
-                        <thead>
-                            <tr>
-                                <th>Nom</th>
-                                <th>Email</th>
-                                <th>Téléphone</th>
-                                <th>Dernière visite</th>
-                            </tr>
-                        </thead>
+                        <thead><tr><th>Nom</th><th>Email</th><th>Téléphone</th><th>Dernière visite</th></tr></thead>
                         <tbody>
                             {patients.map((p, i) => (
                                 <tr key={i}>
@@ -303,9 +325,7 @@ export default function DoctorDashboard() {
                     <li>💬 Chatbot pour répondre aux patients</li>
                     <li>📊 Évaluer les scores de risque</li>
                 </ul>
-                <div className="coming-soon-note">
-                    ⚡ Cette fonctionnalité sera bientôt disponible.
-                </div>
+                <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible.</div>
             </div>
         </div>
     );
@@ -351,16 +371,40 @@ export default function DoctorDashboard() {
                         <h2>Bonjour, <span className="highlight">Dr. {user?.prenom} 👋</span></h2>
                         <p>Vous avez <strong style={{ color: 'var(--primary)' }}>{todayAppts.length} consultation(s)</strong> aujourd'hui</p>
                     </div>
+                    <button className="notif-bell" onClick={markNotificationsRead}>
+                        🔔
+                        {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+                    </button>
                 </div>
+
+                {/* Panneau notifications (hors du banner pour éviter overflow:hidden) */}
+                {showNotifPanel && (
+                    <div className="notif-panel-wrapper">
+                        <div className="notif-panel">
+                            <div className="notif-panel-header">
+                                🔔 Notifications
+                                <button className="notif-close" onClick={() => setShowNotifPanel(false)}>✕</button>
+                            </div>
+                            {notifications.length === 0 ? (
+                                <div className="notif-empty">Aucune notification</div>
+                            ) : notifications.map((n, i) => (
+                                <div key={i} className={`notif-item ${n.lu ? '' : 'unread'}`}>
+                                    <div className="notif-msg">{n.message}</div>
+                                    <div className="notif-time">{formatDate(n.created_at)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {renderContent()}
             </main>
 
-            {/* Modal pour fixer le prix */}
+            {/* Modal confirmer avec prix */}
             {showPriceModal && selectedAppointment && (
                 <div className="modal-overlay" onClick={() => setShowPriceModal(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>💰 Fixer le prix de la consultation</h3>
+                            <h3>✅ Confirmer le rendez-vous</h3>
                             <button className="modal-close" onClick={() => setShowPriceModal(false)}>✕</button>
                         </div>
                         <div className="form-group">
@@ -369,7 +413,7 @@ export default function DoctorDashboard() {
                         </div>
                         <div className="form-group">
                             <label>Date</label>
-                            <input type="text" value={formatDate(selectedAppointment.date_heure)} disabled className="disabled-input" />
+                            <input type="text" value={`${formatDate(selectedAppointment.date_heure)} à ${formatTime(selectedAppointment.date_heure)}`} disabled className="disabled-input" />
                         </div>
                         <div className="form-group">
                             <label>Motif</label>
@@ -377,11 +421,12 @@ export default function DoctorDashboard() {
                         </div>
                         <div className="form-group">
                             <label>💰 Prix de la consultation (€)</label>
-                            <input type="number" placeholder="Entrez le montant" value={prixInput} onChange={(e) => setPrixInput(e.target.value)} min="0" step="10" required autoFocus />
+                            <input type="number" placeholder="Ex: 50" value={prixInput} onChange={e => setPrixInput(e.target.value)} min="0" step="5" autoFocus />
                         </div>
+                        {modalMsg && <div className="modal-msg error">{modalMsg}</div>}
                         <div className="modal-buttons">
                             <button className="btn-secondary" onClick={() => setShowPriceModal(false)}>Annuler</button>
-                            <button className="btn-primary" onClick={handleConfirmWithPrice}>Confirmer et notifier le patient</button>
+                            <button className="btn-primary" onClick={handleConfirmWithPrice}>✅ Confirmer & notifier le patient</button>
                         </div>
                     </div>
                 </div>

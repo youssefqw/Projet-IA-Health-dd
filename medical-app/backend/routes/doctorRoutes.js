@@ -78,29 +78,85 @@ router.put('/appointment/:id/confirm', verifyToken, requireRole('medecin'), asyn
     }
 
     try {
-        // Vérifier que le rendez-vous appartient bien au médecin
         const [appointment] = await db.execute(
-            'SELECT * FROM appointments WHERE id = ? AND medecin_id = ?',
+            'SELECT a.*, u.nom, u.prenom FROM appointments a JOIN users u ON a.medecin_id = u.id WHERE a.id = ? AND a.medecin_id = ?',
             [id, medecin_id]
         );
+        if (appointment.length === 0) return res.status(404).json({ message: 'Rendez-vous non trouvé' });
 
-        if (appointment.length === 0) {
-            return res.status(404).json({ message: 'Rendez-vous non trouvé' });
-        }
-
-        // Mettre à jour le rendez-vous
         await db.execute(
-            'UPDATE appointments SET statut = "confirmé", prix_medecin = ? WHERE id = ? AND medecin_id = ?',
+            'UPDATE appointments SET statut = "confirmé", prix_medecin = ?, paiement_requis = 0 WHERE id = ? AND medecin_id = ?',
             [prix, id, medecin_id]
         );
 
-        res.json({ 
-            message: 'Rendez-vous confirmé avec succès', 
-            prix: prix,
-            appointment_id: id
-        });
+        // Notifier le patient que son RDV est confirmé
+        await db.execute(
+            'INSERT INTO notifications (user_id, type, message, appointment_id) VALUES (?, ?, ?, ?)',
+            [appointment[0].patient_id, 'rdv_confirme',
+             `✅ Votre rendez-vous avec Dr. ${appointment[0].prenom} ${appointment[0].nom} a été confirmé. Prix: ${prix}€`,
+             id]
+        );
+
+        res.json({ message: 'Rendez-vous confirmé avec succès', prix, appointment_id: id });
     } catch (err) {
         console.error(err);
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/doctors/appointment/:id/reject — reject appointment
+router.put('/appointment/:id/reject', verifyToken, requireRole('medecin'), async (req, res) => {
+    const { id } = req.params;
+    const medecin_id = req.user.id;
+
+    try {
+        const [appointment] = await db.execute(
+            'SELECT a.*, u.nom, u.prenom FROM appointments a JOIN users u ON a.medecin_id = u.id WHERE a.id = ? AND a.medecin_id = ?',
+            [id, medecin_id]
+        );
+        if (appointment.length === 0) return res.status(404).json({ message: 'Rendez-vous non trouvé' });
+
+        await db.execute('UPDATE appointments SET statut = "annulé" WHERE id = ?', [id]);
+
+        // Notifier le patient que son RDV est refusé
+        await db.execute(
+            'INSERT INTO notifications (user_id, type, message, appointment_id) VALUES (?, ?, ?, ?)',
+            [appointment[0].patient_id, 'rdv_refuse',
+             `❌ Votre rendez-vous avec Dr. ${appointment[0].prenom} ${appointment[0].nom} a été refusé.`,
+             id]
+        );
+
+        res.json({ message: 'Rendez-vous refusé' });
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/doctors/appointment/:id/request-payment — doctor requests payment from patient
+router.put('/appointment/:id/request-payment', verifyToken, requireRole('medecin'), async (req, res) => {
+    const { id } = req.params;
+    const medecin_id = req.user.id;
+
+    try {
+        const [appointment] = await db.execute(
+            'SELECT a.*, u.nom, u.prenom FROM appointments a JOIN users u ON a.medecin_id = u.id WHERE a.id = ? AND a.medecin_id = ? AND a.statut = "confirmé"',
+            [id, medecin_id]
+        );
+        if (appointment.length === 0) return res.status(404).json({ message: 'Rendez-vous non trouvé ou non confirmé' });
+        if (!appointment[0].prix_medecin) return res.status(400).json({ message: 'Prix non défini' });
+
+        await db.execute('UPDATE appointments SET paiement_requis = 1 WHERE id = ?', [id]);
+
+        // Notifier le patient qu'il doit payer
+        await db.execute(
+            'INSERT INTO notifications (user_id, type, message, appointment_id) VALUES (?, ?, ?, ?)',
+            [appointment[0].patient_id, 'paiement_requis',
+             `💳 Dr. ${appointment[0].prenom} ${appointment[0].nom} vous demande de régler votre consultation: ${appointment[0].prix_medecin}€`,
+             id]
+        );
+
+        res.json({ message: 'Demande de paiement envoyée au patient' });
+    } catch (err) {
         res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }
 });
@@ -113,6 +169,29 @@ router.get('/list', verifyToken, async (req, res) => {
             ['medecin']
         );
         res.json(rows);
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// GET /api/doctors/notifications
+router.get('/notifications', verifyToken, requireRole('medecin'), async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+            [req.user.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/doctors/notifications/read
+router.put('/notifications/read', verifyToken, requireRole('medecin'), async (req, res) => {
+    try {
+        await db.execute('UPDATE notifications SET lu = 1 WHERE user_id = ?', [req.user.id]);
+        res.json({ message: 'Notifications lues' });
     } catch (err) {
         res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }

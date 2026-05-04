@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
+const { sendPatientWelcome, sendDoctorCredentials } = require('../utils/mailer');
 
 // Route d'inscription
 router.post('/register', async (req, res) => {
@@ -39,6 +40,17 @@ router.post('/register', async (req, res) => {
         );
 
         console.log('✅ Inscription réussie pour:', email);
+
+        // Envoyer email de bienvenue
+        if (role === 'patient') {
+            sendPatientWelcome({ prenom, nom, email, password }).catch(err =>
+                console.error('❌ Erreur envoi email patient:', err.message)
+            );
+        } else if (role === 'medecin') {
+            sendDoctorCredentials({ prenom, nom, email, password, specialite }).catch(err =>
+                console.error('❌ Erreur envoi email médecin:', err.message)
+            );
+        }
 
         res.status(201).json({
             message: 'Inscription réussie',

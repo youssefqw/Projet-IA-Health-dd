@@ -57,6 +57,7 @@ export default function AdminDashboard() {
         
         // Charger les stats de paiement
         fetchPaymentStats();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const fetchPaymentStats = async () => {

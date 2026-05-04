@@ -1,5 +1,21 @@
 USE medical_app;
 
+-- Paiements table
+CREATE TABLE IF NOT EXISTS paiements (
+    id                   INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id           INT NOT NULL,
+    medecin_id           INT NOT NULL,
+    rendez_vous_id       INT NOT NULL,
+    montant              DECIMAL(10,2) NOT NULL,
+    methode_paiement     VARCHAR(50) DEFAULT 'carte',
+    reference_paiement   VARCHAR(100) UNIQUE,
+    statut               ENUM('paye','rembourse','annule') DEFAULT 'paye',
+    date_paiement        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id)     REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (medecin_id)     REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (rendez_vous_id) REFERENCES appointments(id) ON DELETE CASCADE
+);
+
 -- Appointments table
 CREATE TABLE IF NOT EXISTS appointments (
     id          INT AUTO_INCREMENT PRIMARY KEY,

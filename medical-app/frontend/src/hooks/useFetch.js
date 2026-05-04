@@ -21,6 +21,7 @@ export default function useFetch(url) {
         } finally {
             setLoading(false);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [url]);
 
     useEffect(() => { load(); }, [load]);

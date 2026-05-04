@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
@@ -13,25 +13,13 @@ const NAV = [
     { icon: '⚙️', label: 'Paramètres',      id: 'settings' },
 ];
 
-const STATUS_BADGE = {
-    'en_attente': 'badge-orange',
-    'confirmé':   'badge-green',
-    'annulé':     'badge-red',
-    'terminé':    'badge-purple',
-};
-
-const STATUS_LABEL = {
-    'en_attente': 'En attente',
-    'confirmé':   'Confirmé',
-    'annulé':     'Annulé',
-    'terminé':    'Terminé',
-};
+const STATUS_BADGE = { 'en_attente': 'badge-orange', 'confirmé': 'badge-green', 'annulé': 'badge-red', 'terminé': 'badge-purple' };
+const STATUS_LABEL = { 'en_attente': 'En attente', 'confirmé': 'Confirmé', 'annulé': 'Annulé', 'terminé': 'Terminé' };
 
 function formatDate(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
 function formatTime(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -41,20 +29,24 @@ export default function PatientDashboard() {
     const { user, logout, authFetch } = useAuth();
     const navigate = useNavigate();
     const [active, setActive] = useState('home');
-    
-    // États pour le paiement
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [selectedAppointment, setSelectedAppointment] = useState(null);
-    const [paymentLoading, setPaymentLoading] = useState(false);
-    const [paymentMessage, setPaymentMessage] = useState('');
-    
-    // États pour la réservation
+
+    // Notifications
+    const [notifications, setNotifications] = useState([]);
+    const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+    // Booking
     const [showBookingModal, setShowBookingModal] = useState(false);
     const [selectedDoctor, setSelectedDoctor] = useState(null);
     const [selectedDate, setSelectedDate] = useState('');
     const [selectedMotif, setSelectedMotif] = useState('');
     const [bookingLoading, setBookingLoading] = useState(false);
     const [bookingMessage, setBookingMessage] = useState('');
+
+    // Payment
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [selectedAppointment, setSelectedAppointment] = useState(null);
+    const [paymentLoading, setPaymentLoading] = useState(false);
+    const [paymentMessage, setPaymentMessage] = useState('');
 
     const { data: appointments, loading: loadAppts, refetch: refetchAppts } = useFetch('http://localhost:5000/api/patients/appointments');
     const { data: doctors, loading: loadDocs } = useFetch('http://localhost:5000/api/patients/doctors');
@@ -63,9 +55,30 @@ export default function PatientDashboard() {
     const initials = user ? `${user.prenom?.[0] || ''}${user.nom?.[0] || ''}`.toUpperCase() : 'P';
 
     const upcoming = appointments?.filter(a => a.statut !== 'annulé' && a.statut !== 'terminé') || [];
-    const history = appointments?.filter(a => a.statut === 'terminé') || [];
+    const history  = appointments?.filter(a => a.statut === 'terminé') || [];
+    const unreadCount = notifications.filter(n => !n.lu).length;
 
-    // Ouvrir modal de réservation
+    const fetchNotifications = useCallback(async () => {
+        try {
+            const res = await authFetch('http://localhost:5000/api/patients/notifications');
+            if (res.ok) setNotifications(await res.json());
+        } catch {}
+    }, [authFetch]);
+
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 15000);
+        return () => clearInterval(interval);
+    }, [fetchNotifications]);
+
+    const markNotificationsRead = async () => {
+        setShowNotifPanel(v => !v);
+        if (unreadCount > 0) {
+            await authFetch('http://localhost:5000/api/patients/notifications/read', { method: 'PUT' });
+            setNotifications(prev => prev.map(n => ({ ...n, lu: 1 })));
+        }
+    };
+
     const openBookingModal = (doctor) => {
         setSelectedDoctor(doctor);
         setSelectedDate('');
@@ -74,92 +87,56 @@ export default function PatientDashboard() {
         setShowBookingModal(true);
     };
 
-    // Créer un rendez-vous (sans prix)
     const handleCreateAppointment = async (e) => {
         e.preventDefault();
         setBookingLoading(true);
         setBookingMessage('');
-
         try {
-            const response = await authFetch('http://localhost:5000/api/patients/appointments/create', {
+            const res = await authFetch('http://localhost:5000/api/patients/appointments/create', {
                 method: 'POST',
-                body: JSON.stringify({
-                    medecin_id: selectedDoctor.id,
-                    date_heure: selectedDate,
-                    motif: selectedMotif
-                }),
+                body: JSON.stringify({ medecin_id: selectedDoctor.id, date_heure: selectedDate, motif: selectedMotif }),
             });
-            
-            const data = await response.json();
-            
-            if (!response.ok) {
-                setBookingMessage(data.message || 'Erreur lors de la réservation');
-                setBookingLoading(false);
-                return;
-            }
-
+            const data = await res.json();
+            if (!res.ok) { setBookingMessage(data.message || 'Erreur lors de la réservation'); return; }
             setBookingMessage('✅ Rendez-vous demandé ! En attente de confirmation du médecin.');
             setTimeout(() => {
                 setShowBookingModal(false);
                 refetchAppts();
-                setSelectedDoctor(null);
-                setSelectedDate('');
-                setSelectedMotif('');
                 setBookingMessage('');
             }, 2000);
-            
-        } catch (error) {
-            console.error('Erreur:', error);
-            setBookingMessage('Erreur de connexion au serveur');
-        } finally {
-            setBookingLoading(false);
-        }
+        } catch { setBookingMessage('Erreur de connexion au serveur'); }
+        finally { setBookingLoading(false); }
     };
 
-    // Ouvrir modal de paiement
-    const openPaymentModal = (appointment) => {
-        setSelectedAppointment(appointment);
+    const openPaymentModal = (appt) => {
+        setSelectedAppointment(appt);
         setPaymentMessage('');
         setShowPaymentModal(true);
     };
 
-    // Effectuer le paiement
     const handlePayAppointment = async () => {
         setPaymentLoading(true);
         setPaymentMessage('');
-
         try {
-            const paymentResponse = await authFetch('http://localhost:5000/api/payments/create', {
+            const res = await authFetch('http://localhost:5000/api/payments/create', {
                 method: 'POST',
                 body: JSON.stringify({
                     rendez_vous_id: selectedAppointment.id,
                     methode_paiement: 'carte',
-                    montant: selectedAppointment.prix_medecin
+                    montant: selectedAppointment.prix_medecin,
                 }),
             });
-            
-            const paymentData = await paymentResponse.json();
-            
-            if (!paymentResponse.ok) {
-                setPaymentMessage(paymentData.message || 'Erreur lors du paiement');
-                setPaymentLoading(false);
-                return;
-            }
-
-            setPaymentMessage(`✅ Paiement effectué avec succès ! Réf: ${paymentData.reference}`);
+            const data = await res.json();
+            if (!res.ok) { setPaymentMessage(data.message || 'Erreur lors du paiement'); return; }
+            setPaymentMessage(`✅ Paiement effectué ! Réf: ${data.reference}`);
             setTimeout(() => {
                 setShowPaymentModal(false);
                 refetchAppts();
-                setSelectedAppointment(null);
+                fetchNotifications();
                 setPaymentMessage('');
             }, 2000);
-            
-        } catch (error) {
-            console.error('Erreur:', error);
-            setPaymentMessage('Erreur de connexion au serveur');
-        } finally {
-            setPaymentLoading(false);
-        }
+        } catch { setPaymentMessage('Erreur de connexion au serveur'); }
+        finally { setPaymentLoading(false); }
     };
 
     const renderHome = () => (
@@ -214,11 +191,19 @@ export default function PatientDashboard() {
                                     <div className="appt-divider" />
                                     <div className="appt-info">
                                         <div className="patient-name">Dr. {a.medecin_prenom} {a.medecin_nom}</div>
-                                        <div className="reason">{a.specialite} {a.motif ? `— ${a.motif}` : ''}</div>
+                                        <div className="reason">{a.specialite}{a.motif ? ` — ${a.motif}` : ''}</div>
                                     </div>
-                                    <span className={`badge ${STATUS_BADGE[a.statut] || 'badge-orange'}`}>
-                                        {STATUS_LABEL[a.statut] || a.statut}
-                                    </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                                        <span className={`badge ${STATUS_BADGE[a.statut] || 'badge-orange'}`}>
+                                            {STATUS_LABEL[a.statut] || a.statut}
+                                        </span>
+                                        {a.statut === 'confirmé' && a.paiement_requis === 1 && a.statut_paiement !== 'paye' && (
+                                            <button className="btn-book" style={{ fontSize: 12 }} onClick={() => openPaymentModal(a)}>💳 Payer {a.prix_medecin}€</button>
+                                        )}
+                                        {a.statut_paiement === 'paye' && (
+                                            <span className="badge badge-green" style={{ fontSize: 11 }}>✅ Payé</span>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -227,18 +212,10 @@ export default function PatientDashboard() {
 
                 <div className="card">
                     <div className="card-header"><h3>⚡ Actions rapides</h3></div>
-                    <button className="action-btn" onClick={() => setActive('doctors')}>
-                        <span className="btn-icon">📅</span> Prendre un rendez-vous
-                    </button>
-                    <button className="action-btn" onClick={() => setActive('appointments')}>
-                        <span className="btn-icon">📋</span> Voir tous mes rendez-vous
-                    </button>
-                    <button className="action-btn" onClick={() => setActive('doctors')}>
-                        <span className="btn-icon">👨⚕️</span> Trouver un médecin
-                    </button>
-                    <button className="action-btn" onClick={() => setActive('ai')}>
-                        <span className="btn-icon">🤖</span> Lancer un diagnostic IA
-                    </button>
+                    <button className="action-btn" onClick={() => setActive('doctors')}><span className="btn-icon">📅</span> Prendre un rendez-vous</button>
+                    <button className="action-btn" onClick={() => setActive('appointments')}><span className="btn-icon">📋</span> Voir tous mes rendez-vous</button>
+                    <button className="action-btn" onClick={() => setActive('doctors')}><span className="btn-icon">👨⚕️</span> Trouver un médecin</button>
+                    <button className="action-btn" onClick={() => setActive('ai')}><span className="btn-icon">🤖</span> Lancer un diagnostic IA</button>
                 </div>
             </div>
         </>
@@ -257,14 +234,8 @@ export default function PatientDashboard() {
                     <table className="appointments-table">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Heure</th>
-                                <th>Médecin</th>
-                                <th>Spécialité</th>
-                                <th>Motif</th>
-                                <th>Prix</th>
-                                <th>Statut</th>
-                                <th>Action</th>
+                                <th>Date</th><th>Heure</th><th>Médecin</th><th>Spécialité</th>
+                                <th>Motif</th><th>Prix</th><th>Statut</th><th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -276,16 +247,19 @@ export default function PatientDashboard() {
                                     <td>{a.specialite}</td>
                                     <td>{a.motif || '-'}</td>
                                     <td>{a.prix_medecin ? `${a.prix_medecin}€` : '-'}</td>
-                                    <td><span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span></td>
+                                    <td><span className={`badge ${STATUS_BADGE[a.statut] || 'badge-orange'}`}>{STATUS_LABEL[a.statut] || a.statut}</span></td>
                                     <td>
-                                        {a.statut === 'confirmé' && a.prix_medecin && a.statut_paiement !== 'paye' && (
-                                            <button className="btn-book" onClick={() => openPaymentModal(a)}>💳 Payer</button>
+                                        {a.statut === 'confirmé' && a.paiement_requis === 1 && a.statut_paiement !== 'paye' && (
+                                            <button className="btn-book" onClick={() => openPaymentModal(a)}>💳 Payer {a.prix_medecin}€</button>
                                         )}
-                                        {a.statut === 'confirmé' && a.prix_medecin && a.statut_paiement === 'paye' && (
+                                        {a.statut_paiement === 'paye' && (
                                             <span className="badge badge-green">✅ Payé</span>
                                         )}
                                         {a.statut === 'en_attente' && (
-                                            <span className="badge badge-orange">En attente confirmation</span>
+                                            <span className="badge badge-orange" style={{ fontSize: 11 }}>⏳ Attente confirmation</span>
+                                        )}
+                                        {a.statut === 'confirmé' && !a.paiement_requis && a.statut_paiement !== 'paye' && (
+                                            <span className="badge badge-green" style={{ fontSize: 11 }}>✅ Confirmé</span>
                                         )}
                                     </td>
                                 </tr>
@@ -339,9 +313,7 @@ export default function PatientDashboard() {
                     <li>💬 Discuter avec un assistant médical</li>
                     <li>📊 Évaluer votre état de santé</li>
                 </ul>
-                <div className="coming-soon-note">
-                    ⚡ Cette fonctionnalité sera bientôt disponible pour tous les patients.
-                </div>
+                <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible pour tous les patients.</div>
             </div>
         </div>
     );
@@ -387,14 +359,38 @@ export default function PatientDashboard() {
                         <h2>Bonjour, <span className="highlight">{user?.prenom} 👋</span></h2>
                         <p>Voici un aperçu de votre espace santé</p>
                     </div>
+                    <button className="notif-bell" onClick={markNotificationsRead}>
+                        🔔
+                        {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+                    </button>
                 </div>
+
+                {/* Panneau notifications (hors du banner pour éviter overflow:hidden) */}
+                {showNotifPanel && (
+                    <div className="notif-panel-wrapper">
+                        <div className="notif-panel">
+                            <div className="notif-panel-header">
+                                🔔 Notifications
+                                <button className="notif-close" onClick={() => setShowNotifPanel(false)}>✕</button>
+                            </div>
+                            {notifications.length === 0 ? (
+                                <div className="notif-empty">Aucune notification</div>
+                            ) : notifications.map((n, i) => (
+                                <div key={i} className={`notif-item ${n.lu ? '' : 'unread'}`}>
+                                    <div className="notif-msg">{n.message}</div>
+                                    <div className="notif-time">{formatDate(n.created_at)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {renderContent()}
             </main>
 
-            {/* Modal de réservation */}
+            {/* Modal réservation */}
             {showBookingModal && selectedDoctor && (
                 <div className="modal-overlay" onClick={() => setShowBookingModal(false)}>
-                    <div className="modal-content payment-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-content payment-modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3>📅 Nouveau rendez-vous</h3>
                             <button className="modal-close" onClick={() => setShowBookingModal(false)}>✕</button>
@@ -402,29 +398,23 @@ export default function PatientDashboard() {
                         <form onSubmit={handleCreateAppointment}>
                             <div className="form-group">
                                 <label>👨⚕️ Médecin</label>
-                                <input type="text" value={`Dr. ${selectedDoctor.prenom} ${selectedDoctor.nom} - ${selectedDoctor.specialite || 'Médecine générale'}`} disabled className="disabled-input" />
+                                <input type="text" value={`Dr. ${selectedDoctor.prenom} ${selectedDoctor.nom} — ${selectedDoctor.specialite || 'Médecine générale'}`} disabled className="disabled-input" />
                             </div>
-
                             <div className="form-group">
-                                <label>📅 Date et heure du rendez-vous *</label>
-                                <input type="datetime-local" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} required />
+                                <label>📅 Date et heure *</label>
+                                <input type="datetime-local" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} required />
                             </div>
-
                             <div className="form-group">
-                                <label>📝 Motif de la consultation</label>
-                                <input type="text" placeholder="Ex: Consultation annuelle, douleur persistante..." value={selectedMotif} onChange={(e) => setSelectedMotif(e.target.value)} />
+                                <label>📝 Motif</label>
+                                <input type="text" placeholder="Ex: Consultation annuelle, douleur..." value={selectedMotif} onChange={e => setSelectedMotif(e.target.value)} />
                             </div>
-
                             {bookingMessage && (
-                                <div className={`payment-message ${bookingMessage.includes('✅') ? 'success' : 'error'}`}>
-                                    {bookingMessage}
-                                </div>
+                                <div className={`payment-message ${bookingMessage.includes('✅') ? 'success' : 'error'}`}>{bookingMessage}</div>
                             )}
-
                             <div className="modal-buttons">
                                 <button type="button" className="btn-secondary" onClick={() => setShowBookingModal(false)}>Annuler</button>
                                 <button type="submit" className="btn-primary" disabled={bookingLoading}>
-                                    {bookingLoading ? 'Traitement...' : 'Demander le rendez-vous'}
+                                    {bookingLoading ? 'Envoi...' : 'Demander le rendez-vous'}
                                 </button>
                             </div>
                         </form>
@@ -432,12 +422,12 @@ export default function PatientDashboard() {
                 </div>
             )}
 
-            {/* Modal de paiement */}
+            {/* Modal paiement */}
             {showPaymentModal && selectedAppointment && (
                 <div className="modal-overlay" onClick={() => setShowPaymentModal(false)}>
-                    <div className="modal-content payment-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-content payment-modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>💰 Paiement consultation</h3>
+                            <h3>💳 Paiement consultation</h3>
                             <button className="modal-close" onClick={() => setShowPaymentModal(false)}>✕</button>
                         </div>
                         <div className="form-group">
@@ -446,21 +436,19 @@ export default function PatientDashboard() {
                         </div>
                         <div className="form-group">
                             <label>📅 Date</label>
-                            <input type="text" value={formatDate(selectedAppointment.date_heure)} disabled className="disabled-input" />
+                            <input type="text" value={`${formatDate(selectedAppointment.date_heure)} à ${formatTime(selectedAppointment.date_heure)}`} disabled className="disabled-input" />
                         </div>
                         <div className="form-group">
                             <label>💰 Montant à payer</label>
-                            <input type="text" value={`${selectedAppointment.prix_medecin}€`} disabled className="disabled-input" style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--primary)' }} />
+                            <input type="text" value={`${selectedAppointment.prix_medecin}€`} disabled className="disabled-input" style={{ fontSize: 22, fontWeight: 'bold', color: 'var(--primary)' }} />
                         </div>
                         {paymentMessage && (
-                            <div className={`payment-message ${paymentMessage.includes('✅') ? 'success' : 'error'}`}>
-                                {paymentMessage}
-                            </div>
+                            <div className={`payment-message ${paymentMessage.includes('✅') ? 'success' : 'error'}`}>{paymentMessage}</div>
                         )}
                         <div className="modal-buttons">
                             <button className="btn-secondary" onClick={() => setShowPaymentModal(false)}>Annuler</button>
                             <button className="btn-primary" onClick={handlePayAppointment} disabled={paymentLoading}>
-                                {paymentLoading ? 'Traitement...' : '💰 Payer maintenant'}
+                                {paymentLoading ? 'Traitement...' : '💳 Payer maintenant'}
                             </button>
                         </div>
                     </div>
