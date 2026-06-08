@@ -2,7 +2,7 @@
 const bcrypt = require('bcrypt');
 
 async function generateValidHash() {
-    const password = 'medecin123';
+    const password = 'admin123';
     
     // Générer un hash valide
     const hash = await bcrypt.hash(password, 10);
@@ -18,7 +18,7 @@ async function generateValidHash() {
     console.log(`Vérification: ${isValid ? '✅ Valide' : '❌ Invalide'}`);
     
     console.log('\n📝 SQL à exécuter:');
-    console.log(`UPDATE users SET password = '${hash}' WHERE email = 'sophie.martin@medecin.fr';`);
+    console.log(`UPDATE users SET password = '${hash}' WHERE email = 'admin@medical.com';`);
 }
 
 generateValidHash();

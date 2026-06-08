@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
 import SettingsPage from '../../components/SettingsPage';
 import './Dashboard.css';
+import jsPDF from 'jspdf';
 
 const NAV = [
     { icon: '🏠', label: 'Accueil',       id: 'home' },
@@ -33,6 +34,10 @@ export default function DoctorDashboard() {
     const { user, logout, authFetch } = useAuth();
     const navigate = useNavigate();
     const [active, setActive] = useState('home');
+    const [aiMessage, setAiMessage] = useState('');
+const [aiResponse, setAiResponse] = useState('');
+const [report, setReport] = useState('');
+const [aiLoading, setAiLoading] = useState(false);
 
     // Notifications
     const [notifications, setNotifications] = useState([]);
@@ -85,6 +90,82 @@ export default function DoctorDashboard() {
             setNotifications(prev => prev.map(n => ({ ...n, lu: 1 })));
         }
     };
+    const handleAIChat = async () => {
+
+    if (!aiMessage) return;
+
+    setAiLoading(true);
+
+    try {
+
+        const res = await authFetch('http://localhost:5000/api/ai/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                message: aiMessage
+            })
+        });
+
+        const data = await res.json();
+
+        setAiResponse(data.reply);
+
+    } catch (error) {
+
+        console.error(error);
+
+        setAiResponse("Erreur avec l'IA");
+
+    } finally {
+
+        setAiLoading(false);
+    }
+};
+    const generateReport = () => {
+
+    const generated = `
+=========== RAPPORT MÉDICAL ===========
+
+👨‍⚕️ Médecin :
+Dr. ${user?.prenom} ${user?.nom}
+
+📅 Date :
+${new Date().toLocaleDateString()}
+
+🩺 Symptômes du patient :
+${aiMessage}
+
+🤖 Analyse IA :
+${aiResponse}
+
+=======================================
+`;
+
+    setReport(generated);
+};
+const generatePDF = () => {
+
+    const doc = new jsPDF();
+
+    doc.setFontSize(16);
+    doc.text('RAPPORT MEDICAL', 20, 20);
+
+    doc.setFontSize(12);
+
+    doc.text(`Médecin : Dr. ${user?.prenom} ${user?.nom}`, 20, 40);
+
+    doc.text(`Date : ${new Date().toLocaleDateString()}`, 20, 50);
+
+    doc.text('Symptômes du patient :', 20, 70);
+    doc.text(aiMessage || '', 20, 80, { maxWidth: 170 });
+
+    doc.text('Analyse IA :', 20, 110);
+    doc.text(aiResponse || '', 20, 120, { maxWidth: 170 });
+
+    doc.save('rapport-medical.pdf');
+};
 
     // Ouvrir modal confirmation avec prix
     const openConfirmModal = (appt) => {
@@ -310,6 +391,7 @@ export default function DoctorDashboard() {
     );
 
     const renderAI = () => (
+<<<<<<< Updated upstream
         <div className="card">
             <div className="card-header">
                 <h3>🤖 Outils IA</h3>
@@ -327,8 +409,79 @@ export default function DoctorDashboard() {
                 </ul>
                 <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible.</div>
             </div>
+=======
+    <div className="card">
+        <div className="card-header">
+            <h3>🤖 Assistant IA Médical</h3>
+>>>>>>> Stashed changes
         </div>
-    );
+
+        <div style={{ marginTop: '20px' }}>
+
+            <textarea
+                placeholder="Décrivez les symptômes ou posez une question médicale..."
+                value={aiMessage}
+                onChange={(e) => setAiMessage(e.target.value)}
+                style={{
+                    width: '100%',
+                    minHeight: '120px',
+                    padding: '15px',
+                    borderRadius: '10px',
+                    border: '1px solid #ccc',
+                    marginBottom: '15px'
+                }}
+            />
+
+            <button
+                onClick={handleAIChat}
+                className="action-btn"
+                disabled={aiLoading}
+            >
+                {aiLoading ? 'Analyse en cours...' : 'Envoyer à l’IA'}
+            </button>
+            <button
+    onClick={() => {
+    generateReport();
+    generatePDF();
+}}
+    className="action-btn"
+    style={{ marginLeft: '10px' }}
+>
+    📄 Générer rapport
+</button>
+
+            {aiResponse && (
+                <div
+                    style={{
+                        marginTop: '20px',
+                        padding: '20px',
+                        background: '#f5f7ff',
+                        borderRadius: '10px',
+                        whiteSpace: 'pre-wrap'
+                    }}
+                >
+                    <strong>Réponse IA :</strong>
+                    <p>{aiResponse}</p>
+                </div>
+            )}
+            {report && (
+    <div
+        style={{
+            marginTop: '20px',
+            padding: '20px',
+            background: '#eef6ff',
+            borderRadius: '10px',
+            whiteSpace: 'pre-line'
+        }}
+    >
+        <h3>📄 Rapport Médical</h3>
+        <p>{report}</p>
+    </div>
+)}
+
+        </div>
+    </div>
+);
 
     const renderContent = () => {
         if (active === 'planning') return renderPlanning();

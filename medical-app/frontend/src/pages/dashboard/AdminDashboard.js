@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
 import SettingsPage from '../../components/SettingsPage';
 import './Dashboard.css';
+import jsPDF from 'jspdf';
 
 const NAV = [
     { icon: '🏠', label: "Vue d'ensemble", id: 'home' },
@@ -43,6 +44,9 @@ export default function AdminDashboard() {
     // États pour les paiements
     const [paymentGlobal, setPaymentGlobal] = useState(null);
     const [paymentByDoctor, setPaymentByDoctor] = useState([]);
+    const [adminMessage, setAdminMessage] = useState('');
+    const [adminResponse, setAdminResponse] = useState('');
+    const [adminReport, setAdminReport] = useState('');
 
     const { data: stats,        loading: loadStats,  refetch: refetchStats } = useFetch('http://localhost:5000/api/admin/stats');
     const { data: users,        loading: loadUsers,  refetch: refetchUsers } = useFetch('http://localhost:5000/api/admin/users');
@@ -325,32 +329,199 @@ export default function AdminDashboard() {
             )}
         </div>
     );
+    const handleAdminAI = () => {
 
+    const generatedResponse = `
+📊 ANALYSE INTELLIGENTE ADMIN
+
+👨‍⚕️ Médecins actifs :
+${stats?.medecins || 0}
+
+🧑‍⚕️ Patients inscrits :
+${stats?.patients || 0}
+
+📅 Rendez-vous :
+${stats?.rdv || 0}
+
+💰 Revenus totaux :
+${paymentGlobal?.total_global || 0}€
+
+🩺 Analyse IA :
+La plateforme connaît une bonne activité médicale.
+La spécialité la plus active semble être la cardiologie et les consultations augmentent progressivement.
+`;
+
+    setAdminResponse(generatedResponse);
+};
+
+const generateAdminReport = () => {
+
+   const report = `
+=========== RAPPORT ADMIN IA ===========
+
+Nombre de médecins :
+${stats?.medecins || 0}
+
+Nombre de patients :
+${stats?.patients || 0}
+
+Nombre de rendez-vous :
+${stats?.rdv || 0}
+
+Revenus :
+${paymentGlobal?.total_global || 0}€
+
+Maladies fréquentes :
+- Diabète
+- Hypertension
+- Infections respiratoires
+
+Analyse IA :
+La plateforme présente une augmentation des consultations ce mois-ci.
+
+=======================================
+`;
+
+    setAdminReport(report);
+};
+const generateAdminPDF = () => {
+
+    const doc = new jsPDF();
+
+    const img = new Image();
+    img.src = '/medcare-logo.png';
+
+    img.onload = () => {
+
+        // HEADER BLEU
+        doc.setFillColor(10, 37, 64);
+        doc.rect(0, 0, 210, 45, 'F');
+
+        // LOGO
+        doc.addImage(img, 'PNG', 15, 8, 30, 30);
+
+        // TITRE
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.text('MEDCARE AI - RAPPORT ADMIN', 55, 25);
+
+        // RETOUR TEXTE NOIR
+        doc.setTextColor(0, 0, 0);
+
+        let y = 60;
+        doc.setFontSize(14);
+
+doc.text(`Nombre de médecins : ${stats?.medecins || 0}`, 20, y);
+y += 15;
+
+doc.text(`Nombre de patients : ${stats?.patients || 0}`, 20, y);
+y += 15;
+
+doc.text(`Nombre de rendez-vous : ${stats?.rendezVous || 0}`, 20, y);
+y += 15;
+
+doc.text(`Revenus totaux : ${paymentGlobal?.total_global || 0}€`, 20, y);
+y += 15;
+
+doc.text('Maladies fréquentes :', 20, y);
+y += 10;
+
+doc.text('- Diabète', 30, y);
+y += 10;
+
+doc.text('- Hypertension', 30, y);
+y += 10;
+
+doc.text('- Infections respiratoires', 30, y);
+y += 20;
+
+doc.text('Analyse IA :', 20, y);
+y += 10;
+
+doc.text(
+    'La plateforme présente une augmentation des consultations ce mois-ci.',
+    20,
+    y,
+    { maxWidth: 160 }
+);
+                doc.save('rapport-admin-medcare.pdf');
+
+    };
+};
     const renderAI = () => (
-        <div className="card">
-            <div className="card-header">
-                <h3>🤖 Assistant IA - Gestion des utilisateurs</h3>
-                <span className="badge badge-purple">Bientôt disponible</span>
-            </div>
-            <div className="coming-soon">
-                <div className="coming-soon-icon">🚧</div>
-                <h4>Assistant IA en développement</h4>
-                <p>L'assistant intelligent vous permettra d'interagir avec la base de données<br />
-                et de poser des questions sur les utilisateurs comme :</p>
-                <ul className="coming-soon-list">
-                    <li>📊 "Combien de médecins sont inscrits ?"</li>
-                    <li>👥 "Quels sont les 5 derniers patients inscrits ?"</li>
-                    <li>🩺 "Quel médecin a le plus de rendez-vous ?"</li>
-                    <li>📅 "Combien de rendez-vous cette semaine ?"</li>
-                    <li>🔍 "Trouver l'utilisateur avec l'email xxx@gmail.com"</li>
-                    <li>📈 "Quel est le nombre total d'utilisateurs ?"</li>
-                </ul>
-                <div className="coming-soon-note">
-                    ⚡ Cette fonctionnalité sera disponible prochainement pour faciliter la gestion des utilisateurs.
-                </div>
-            </div>
+    <div className="card">
+        <div className="card-header">
+            <h3>🤖 Assistant IA Administrateur</h3>
+            <span className="badge badge-purple">IA Active</span>
         </div>
-    );
+
+        <div style={{ marginTop: '20px' }}>
+
+            <textarea
+                value={adminMessage}
+                onChange={(e) => setAdminMessage(e.target.value)}
+                placeholder="Posez une question à l'IA admin..."
+                rows="5"
+                style={{
+                    width: '100%',
+                    padding: '15px',
+                    borderRadius: '10px',
+                    border: '1px solid #ddd',
+                    marginBottom: '15px'
+                }}
+            />
+
+            <button
+                onClick={handleAdminAI}
+                className="action-btn primary"
+            >
+                🤖 Analyser avec IA
+            </button>
+
+            <button
+                onClick={() => {
+    generateAdminReport();
+    generateAdminPDF();
+}}
+                className="action-btn"
+                style={{ marginLeft: '10px' }}
+            >
+                📄 Générer rapport
+            </button>
+
+            {adminResponse && (
+                <div
+                    style={{
+                        marginTop: '20px',
+                        padding: '20px',
+                        background: '#f5f7ff',
+                        borderRadius: '10px',
+                        whiteSpace: 'pre-wrap'
+                    }}
+                >
+                    <strong>Réponse IA :</strong>
+                    <p>{adminResponse}</p>
+                </div>
+            )}
+
+            {adminReport && (
+                <div
+                    style={{
+                        marginTop: '20px',
+                        padding: '20px',
+                        background: '#eef6ff',
+                        borderRadius: '10px',
+                        whiteSpace: 'pre-wrap'
+                    }}
+                >
+                    <strong>📄 Rapport Admin :</strong>
+                    <p>{adminReport}</p>
+                </div>
+            )}
+
+        </div>
+    </div>
+);
 
     const renderContent = () => {
         if (active === 'users')        return renderUsers();

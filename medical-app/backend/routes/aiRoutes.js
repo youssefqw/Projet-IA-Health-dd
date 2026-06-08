@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
+const axios = require('axios');
 
 // Symptom → condition knowledge base
 const SYMPTOM_DB = [
@@ -146,5 +147,45 @@ router.get('/history', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }
 });
+// POST /api/ai/chat
+const Groq = require("groq-sdk");
 
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
+});
+
+// POST /api/ai/chat
+router.post('/chat', verifyToken, async (req, res) => {
+
+    try {
+
+        const { message } = req.body;
+
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: "Tu es un assistant médical professionnel.",
+                },
+                {
+                    role: "user",
+                    content: message,
+                },
+            ],
+           model: "llama-3.3-70b-versatile",
+        });
+
+        res.json({
+            reply: chatCompletion.choices[0].message.content
+        });
+
+    } catch (error) {
+
+        console.log(error);
+
+        res.status(500).json({
+            message: 'Erreur chatbot IA'
+        });
+    }
+});
 module.exports = router;

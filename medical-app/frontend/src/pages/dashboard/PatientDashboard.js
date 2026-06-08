@@ -41,6 +41,9 @@ export default function PatientDashboard() {
     const [selectedMotif, setSelectedMotif] = useState('');
     const [bookingLoading, setBookingLoading] = useState(false);
     const [bookingMessage, setBookingMessage] = useState('');
+    const [aiMessage, setAiMessage] = useState('');
+    const [aiResponse, setAiResponse] = useState('');
+    const [aiLoading, setAiLoading] = useState(false);
 
     // Payment
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -138,6 +141,48 @@ export default function PatientDashboard() {
         } catch { setPaymentMessage('Erreur de connexion au serveur'); }
         finally { setPaymentLoading(false); }
     };
+    const handlePatientAI = async () => {
+
+    if (!aiMessage) return;
+
+    setAiLoading(true);
+
+    try {
+
+        const res = await authFetch('http://localhost:5000/api/ai/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                message: `
+Tu es un assistant médical pour patients.
+
+Analyse les symptômes suivants et indique :
+- la spécialité médicale recommandée
+- une courte explication
+
+Symptômes :
+${aiMessage}
+`
+            })
+        });
+
+        const data = await res.json();
+
+        setAiResponse(data.reply);
+
+    } catch (error) {
+
+        console.error(error);
+
+        setAiResponse("Erreur avec l'IA");
+
+    } finally {
+
+        setAiLoading(false);
+    }
+};
 
     const renderHome = () => (
         <>
@@ -298,6 +343,7 @@ export default function PatientDashboard() {
     );
 
     const renderAI = () => (
+<<<<<<< Updated upstream
         <div className="card">
             <div className="card-header">
                 <h3>🤖 Diagnostic IA</h3>
@@ -315,8 +361,52 @@ export default function PatientDashboard() {
                 </ul>
                 <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible pour tous les patients.</div>
             </div>
+=======
+    <div className="card">
+        <div className="card-header">
+            <h3>🤖 Assistant IA Patient</h3>
+>>>>>>> Stashed changes
         </div>
-    );
+
+        <textarea
+            placeholder="Décrivez vos symptômes..."
+            value={aiMessage}
+            onChange={(e) => setAiMessage(e.target.value)}
+            style={{
+                width: '100%',
+                minHeight: '150px',
+                padding: '15px',
+                borderRadius: '10px',
+                border: '1px solid #ccc',
+                marginTop: '20px'
+            }}
+        />
+
+        <button
+            className="action-btn"
+            onClick={handlePatientAI}
+            disabled={aiLoading}
+            style={{ marginTop: '15px' }}
+        >
+            {aiLoading ? 'Analyse en cours...' : 'Analyser mes symptômes'}
+        </button>
+
+        {aiResponse && (
+            <div
+                style={{
+                    marginTop: '20px',
+                    padding: '20px',
+                    background: '#f5f7ff',
+                    borderRadius: '10px',
+                    whiteSpace: 'pre-wrap'
+                }}
+            >
+                <strong>Réponse IA :</strong>
+                <p>{aiResponse}</p>
+            </div>
+        )}
+    </div>
+);
 
     const renderContent = () => {
         if (active === 'appointments') return renderAppointments();

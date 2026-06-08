@@ -1,14 +1,17 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+
+dotenv.config();
+
 const db = require('./config/database');
 
-const authRoutes        = require('./routes/authRoutes');
-const patientRoutes     = require('./routes/patientRoutes');
-const doctorRoutes      = require('./routes/doctorRoutes');
+const authRoutes = require('./routes/authRoutes');
+const patientRoutes = require('./routes/patientRoutes');
+const doctorRoutes = require('./routes/doctorRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
-const aiRoutes          = require('./routes/aiRoutes');
-const adminRoutes       = require('./routes/adminRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 
 dotenv.config();
