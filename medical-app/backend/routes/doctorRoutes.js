@@ -89,6 +89,15 @@ router.put('/appointment/:id/confirm', verifyToken, requireRole('medecin'), asyn
             [prix, id, medecin_id]
         );
 
+        // Auto-enregistrer dans paiements
+        const reference = `PAY-DOCTOR-${id}-${Date.now()}`;
+        await db.execute(
+            `INSERT INTO paiements (patient_id, medecin_id, rendez_vous_id, montant, methode_paiement, reference_paiement, date_paiement, statut)
+             VALUES (?, ?, ?, ?, 'consultation', ?, NOW(), 'paye')
+             ON DUPLICATE KEY UPDATE montant = VALUES(montant)`,
+            [appointment[0].patient_id, medecin_id, id, prix, reference]
+        );
+
         // Notifier le patient que son RDV est confirmé
         await db.execute(
             'INSERT INTO notifications (user_id, type, message, appointment_id) VALUES (?, ?, ?, ?)',
@@ -127,6 +136,23 @@ router.put('/appointment/:id/reject', verifyToken, requireRole('medecin'), async
         );
 
         res.json({ message: 'Rendez-vous refusé' });
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur', error: err.message });
+    }
+});
+
+// PUT /api/doctors/appointment/:id/terminate — mark as terminé
+router.put('/appointment/:id/terminate', verifyToken, requireRole('medecin'), async (req, res) => {
+    const { id } = req.params;
+    const medecin_id = req.user.id;
+    try {
+        const [rows] = await db.execute(
+            'SELECT * FROM appointments WHERE id = ? AND medecin_id = ? AND statut = "confirmé"',
+            [id, medecin_id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Rendez-vous non trouvé ou non confirmé' });
+        await db.execute('UPDATE appointments SET statut = "terminé" WHERE id = ?', [id]);
+        res.json({ message: 'Rendez-vous marqué comme terminé' });
     } catch (err) {
         res.status(500).json({ message: 'Erreur serveur', error: err.message });
     }

@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import useFetch from '../../hooks/useFetch';
 import SettingsPage from '../../components/SettingsPage';
-import './Dashboard.css';
 import jsPDF from 'jspdf';
+import './Dashboard.css';
 
 const NAV = [
     { icon: '🏠', label: 'Accueil',       id: 'home' },
@@ -21,12 +21,15 @@ function formatDate(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
 function formatTime(dt) {
     if (!dt) return '-';
     return new Date(dt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
+
 function isToday(dt) {
-    const d = new Date(dt), t = new Date();
+    const d = new Date(dt);
+    const t = new Date();
     return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
 }
 
@@ -34,23 +37,36 @@ export default function DoctorDashboard() {
     const { user, logout, authFetch } = useAuth();
     const navigate = useNavigate();
     const [active, setActive] = useState('home');
-    const [aiMessage, setAiMessage] = useState('');
-const [aiResponse, setAiResponse] = useState('');
-const [report, setReport] = useState('');
-const [aiLoading, setAiLoading] = useState(false);
 
-    // Notifications
-    const [notifications, setNotifications] = useState([]);
-    const [showNotifPanel, setShowNotifPanel] = useState(false);
-
-    // Modal confirmer avec prix
+    // États pour le modal de confirmation avec prix
     const [showPriceModal, setShowPriceModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState(null);
     const [prixInput, setPrixInput] = useState('');
-    const [modalMsg, setModalMsg] = useState('');
 
-    // Stats paiements
+    // États pour les paiements
     const [paymentStats, setPaymentStats] = useState({ stats: { total: 0, nombre: 0, moyenne: 0, mois_en_cours: 0 }, recent: [] });
+    const [loadingPayments, setLoadingPayments] = useState(false);
+
+    // États IA
+    const [aiTab, setAiTab] = useState('symptoms');
+    const [symptomsInput, setSymptomsInput] = useState('');
+    const [patientAge, setPatientAge] = useState('');
+    const [diagnoseResult, setDiagnoseResult] = useState(null);
+    const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+    const [reportPatient, setReportPatient] = useState('');
+    const [reportSymptoms, setReportSymptoms] = useState('');
+    const [reportDiag, setReportDiag] = useState('');
+    const [reportResult, setReportResult] = useState('');
+    const [reportLoading, setReportLoading] = useState(false);
+    const [chatMessages, setChatMessages] = useState([{ role: 'bot', text: '👋 Bonjour Dr. ! Posez-moi une question médicale concernant vos patients.' }]);
+    const [chatInput, setChatInput] = useState('');
+    const [chatLoading, setChatLoading] = useState(false);
+    const chatEndRef = useRef(null);
+    const [riskAge, setRiskAge] = useState('');
+    const [riskConditions, setRiskConditions] = useState('');
+    const [riskSymptoms, setRiskSymptoms] = useState('');
+    const [riskResult, setRiskResult] = useState(null);
+    const [riskLoading, setRiskLoading] = useState(false);
 
     const { data: appointments, loading: loadAppts, refetch: refetchAppts } = useFetch('http://localhost:5000/api/doctors/appointments');
     const { data: patients,     loading: loadPats  }                        = useFetch('http://localhost:5000/api/doctors/patients');
@@ -60,151 +76,51 @@ const [aiLoading, setAiLoading] = useState(false);
 
     const todayAppts   = appointments?.filter(a => isToday(a.date_heure)) || [];
     const pendingAppts = appointments?.filter(a => a.statut === 'en_attente') || [];
-    const unreadCount  = notifications.filter(n => !n.lu).length;
 
-    const fetchNotifications = useCallback(async () => {
-        try {
-            const res = await authFetch('http://localhost:5000/api/doctors/notifications');
-            if (res.ok) setNotifications(await res.json());
-        } catch {}
-    }, [authFetch]);
-
-    const fetchPaymentStats = useCallback(async () => {
+    // Charger les statistiques de paiement
+    const fetchPaymentStats = async () => {
+        setLoadingPayments(true);
         try {
             const res = await authFetch('http://localhost:5000/api/payments/doctor/stats');
-            if (res.ok) setPaymentStats(await res.json());
-        } catch {}
-    }, [authFetch]);
-
-    useEffect(() => {
-        fetchNotifications();
-        fetchPaymentStats();
-        const interval = setInterval(fetchNotifications, 15000);
-        return () => clearInterval(interval);
-    }, [fetchNotifications, fetchPaymentStats]);
-
-    const markNotificationsRead = async () => {
-        setShowNotifPanel(v => !v);
-        if (unreadCount > 0) {
-            await authFetch('http://localhost:5000/api/doctors/notifications/read', { method: 'PUT' });
-            setNotifications(prev => prev.map(n => ({ ...n, lu: 1 })));
+            const data = await res.json();
+            setPaymentStats(data);
+        } catch (error) {
+            console.error('Erreur chargement stats paiements:', error);
+        } finally {
+            setLoadingPayments(false);
         }
     };
-    const handleAIChat = async () => {
 
-    if (!aiMessage) return;
+    useEffect(() => {
+        fetchPaymentStats();
+    }, []);
 
-    setAiLoading(true);
-
-    try {
-
-        const res = await authFetch('http://localhost:5000/api/ai/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                message: aiMessage
-            })
-        });
-
-        const data = await res.json();
-
-        setAiResponse(data.reply);
-
-    } catch (error) {
-
-        console.error(error);
-
-        setAiResponse("Erreur avec l'IA");
-
-    } finally {
-
-        setAiLoading(false);
-    }
-};
-    const generateReport = () => {
-
-    const generated = `
-=========== RAPPORT MÉDICAL ===========
-
-👨‍⚕️ Médecin :
-Dr. ${user?.prenom} ${user?.nom}
-
-📅 Date :
-${new Date().toLocaleDateString()}
-
-🩺 Symptômes du patient :
-${aiMessage}
-
-🤖 Analyse IA :
-${aiResponse}
-
-=======================================
-`;
-
-    setReport(generated);
-};
-const generatePDF = () => {
-
-    const doc = new jsPDF();
-
-    doc.setFontSize(16);
-    doc.text('RAPPORT MEDICAL', 20, 20);
-
-    doc.setFontSize(12);
-
-    doc.text(`Médecin : Dr. ${user?.prenom} ${user?.nom}`, 20, 40);
-
-    doc.text(`Date : ${new Date().toLocaleDateString()}`, 20, 50);
-
-    doc.text('Symptômes du patient :', 20, 70);
-    doc.text(aiMessage || '', 20, 80, { maxWidth: 170 });
-
-    doc.text('Analyse IA :', 20, 110);
-    doc.text(aiResponse || '', 20, 120, { maxWidth: 170 });
-
-    doc.save('rapport-medical.pdf');
-};
-
-    // Ouvrir modal confirmation avec prix
-    const openConfirmModal = (appt) => {
-        setSelectedAppointment(appt);
+    // Ouvrir modal pour fixer le prix
+    const openPriceModal = (appointment) => {
+        setSelectedAppointment(appointment);
         setPrixInput('');
-        setModalMsg('');
         setShowPriceModal(true);
     };
 
-    // Confirmer RDV avec prix → notifie patient
+    // Confirmer le rendez-vous avec prix
     const handleConfirmWithPrice = async () => {
-        if (!prixInput || prixInput <= 0) { setModalMsg('Veuillez entrer un prix valide'); return; }
+        if (!prixInput || prixInput <= 0) {
+            alert('Veuillez entrer un prix valide');
+            return;
+        }
+        
         try {
-            const res = await authFetch(`http://localhost:5000/api/doctors/appointment/${selectedAppointment.id}/confirm`, {
+            await authFetch(`http://localhost:5000/api/doctors/appointment/${selectedAppointment.id}/confirm`, {
                 method: 'PUT',
                 body: JSON.stringify({ prix: parseFloat(prixInput) }),
             });
-            if (!res.ok) { const d = await res.json(); setModalMsg(d.message); return; }
+            
             setShowPriceModal(false);
             refetchAppts();
             fetchPaymentStats();
-        } catch { setModalMsg('Erreur de connexion'); }
-    };
-
-    // Refuser RDV → notifie patient
-    const handleReject = async (appt) => {
-        if (!window.confirm(`Refuser le rendez-vous de ${appt.patient_prenom} ${appt.patient_nom} ?`)) return;
-        try {
-            await authFetch(`http://localhost:5000/api/doctors/appointment/${appt.id}/reject`, { method: 'PUT' });
-            refetchAppts();
-        } catch {}
-    };
-
-    // Demander paiement → notifie patient
-    const handleRequestPayment = async (appt) => {
-        try {
-            const res = await authFetch(`http://localhost:5000/api/doctors/appointment/${appt.id}/request-payment`, { method: 'PUT' });
-            if (res.ok) refetchAppts();
-        } catch {}
+        } catch (error) {
+            console.error('Erreur:', error);
+        }
     };
 
     const renderHome = () => (
@@ -213,28 +129,28 @@ const generatePDF = () => {
                 <div className="payment-card">
                     <div className="payment-card-icon blue">💰</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{`${paymentStats.stats?.total || 0}€`}</div>
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.total || 0}€`}</div>
                         <div className="payment-card-title">Total des revenus</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon green">📊</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{paymentStats.stats?.nombre || 0}</div>
+                        <div className="payment-card-value">{loadingPayments ? '...' : paymentStats.stats?.nombre || 0}</div>
                         <div className="payment-card-title">Consultations payées</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon purple">💶</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{`${paymentStats.stats?.moyenne || 0}€`}</div>
-                        <div className="payment-card-title">Moyenne / consultation</div>
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.moyenne || 0}€`}</div>
+                        <div className="payment-card-title">Moyenne par consultation</div>
                     </div>
                 </div>
                 <div className="payment-card">
                     <div className="payment-card-icon orange">📅</div>
                     <div className="payment-card-info">
-                        <div className="payment-card-value">{`${paymentStats.stats?.mois_en_cours || 0}€`}</div>
+                        <div className="payment-card-value">{loadingPayments ? '...' : `${paymentStats.stats?.mois_en_cours || 0}€`}</div>
                         <div className="payment-card-title">Ce mois-ci</div>
                     </div>
                 </div>
@@ -274,28 +190,25 @@ const generatePDF = () => {
             <div className="content-grid">
                 <div className="card">
                     <div className="card-header">
-                        <h3>⏳ Rendez-vous en attente</h3>
-                        <span className="badge badge-orange">{pendingAppts.length} à traiter</span>
+                        <h3>📅 Planning du jour</h3>
+                        <span className="badge badge-blue">{todayAppts.length} consultations</span>
                     </div>
-                    {loadAppts ? <div className="loading-text">Chargement...</div> : pendingAppts.length === 0 ? (
-                        <div className="empty-state">Aucun rendez-vous en attente.</div>
+                    {loadAppts ? <div className="loading-text">Chargement...</div> : todayAppts.length === 0 ? (
+                        <div className="empty-state">Aucune consultation aujourd'hui.</div>
                     ) : (
                         <div className="appt-list">
-                            {pendingAppts.slice(0, 4).map((a, i) => (
+                            {todayAppts.map((a, i) => (
                                 <div className="appt-item" key={i}>
                                     <div className="appt-time">
                                         <div className="time">{formatTime(a.date_heure)}</div>
-                                        <div className="date">{formatDate(a.date_heure)}</div>
+                                        <div className="date">Aujourd'hui</div>
                                     </div>
                                     <div className="appt-divider" />
                                     <div className="appt-info">
                                         <div className="patient-name">{a.patient_prenom} {a.patient_nom}</div>
                                         <div className="reason">{a.motif || 'Consultation'}</div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                        <button className="tbl-btn green" onClick={() => openConfirmModal(a)}>✓ Confirmer</button>
-                                        <button className="tbl-btn red" onClick={() => handleReject(a)}>✗ Refuser</button>
-                                    </div>
+                                    <span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span>
                                 </div>
                             ))}
                         </div>
@@ -325,8 +238,14 @@ const generatePDF = () => {
                     <table className="appointments-table">
                         <thead>
                             <tr>
-                                <th>Date</th><th>Heure</th><th>Patient</th><th>Tél.</th>
-                                <th>Motif</th><th>Prix</th><th>Statut</th><th>Actions</th>
+                                <th>Date</th>
+                                <th>Heure</th>
+                                <th>Patient</th>
+                                <th>Téléphone</th>
+                                <th>Motif</th>
+                                <th>Prix</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -338,19 +257,24 @@ const generatePDF = () => {
                                     <td>{a.patient_tel || '-'}</td>
                                     <td>{a.motif || '-'}</td>
                                     <td>{a.prix_medecin ? `${a.prix_medecin}€` : '-'}</td>
-                                    <td><span className={`badge ${STATUS_BADGE[a.statut] || 'badge-orange'}`}>{STATUS_LABEL[a.statut] || a.statut}</span></td>
+                                    <td><span className={`badge ${STATUS_BADGE[a.statut]}`}>{STATUS_LABEL[a.statut]}</span></td>
                                     <td>
                                         {a.statut === 'en_attente' && (
-                                            <div style={{ display: 'flex', gap: 4 }}>
-                                                <button className="tbl-btn green" onClick={() => openConfirmModal(a)}>✓ Confirmer</button>
-                                                <button className="tbl-btn red" onClick={() => handleReject(a)}>✗ Refuser</button>
+                                            <button className="tbl-btn green" onClick={() => openPriceModal(a)}>
+                                                ✓ Confirmer & fixer prix
+                                            </button>
+                                        )}
+                                        {a.statut === 'confirmé' && (
+                                            <div style={{ display: 'flex', gap: 6 }}>
+                                                <button className="tbl-btn purple" onClick={async () => {
+                                                    await authFetch(`http://localhost:5000/api/doctors/appointment/${a.id}/terminate`, { method: 'PUT' });
+                                                    refetchAppts(); fetchPaymentStats();
+                                                }}>✅ Passé</button>
+                                                <button className="tbl-btn red" onClick={async () => {
+                                                    await authFetch(`http://localhost:5000/api/doctors/appointment/${a.id}/reject`, { method: 'PUT' });
+                                                    refetchAppts();
+                                                }}>❌ Annuler</button>
                                             </div>
-                                        )}
-                                        {a.statut === 'confirmé' && !a.paiement_requis && (
-                                            <button className="tbl-btn blue" onClick={() => handleRequestPayment(a)}>💳 Demander paiement</button>
-                                        )}
-                                        {a.statut === 'confirmé' && a.paiement_requis === 1 && (
-                                            <span className="badge badge-orange">⏳ Paiement en attente</span>
                                         )}
                                     </td>
                                 </tr>
@@ -373,7 +297,14 @@ const generatePDF = () => {
             ) : (
                 <div className="table-wrap">
                     <table className="patients-table">
-                        <thead><tr><th>Nom</th><th>Email</th><th>Téléphone</th><th>Dernière visite</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Email</th>
+                                <th>Téléphone</th>
+                                <th>Dernière visite</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             {patients.map((p, i) => (
                                 <tr key={i}>
@@ -390,98 +321,251 @@ const generatePDF = () => {
         </div>
     );
 
+    const handleDiagnose = async () => {
+        const list = symptomsInput.split(',').map(s => s.trim()).filter(Boolean);
+        if (!list.length) return;
+        setDiagnoseLoading(true); setDiagnoseResult(null);
+        try {
+            const res = await authFetch('http://localhost:5000/api/ai/diagnose', {
+                method: 'POST',
+                body: JSON.stringify({ symptoms: list, age: patientAge }),
+            });
+            setDiagnoseResult(await res.json());
+        } catch { setDiagnoseResult({ message: 'Erreur serveur.' }); }
+        setDiagnoseLoading(false);
+    };
+
+    const handleGenerateReport = async () => {
+        if (!reportPatient || !reportSymptoms) return;
+        setReportLoading(true); setReportResult('');
+        try {
+            const prompt = `Tu es un médecin. Rédige un rapport médical professionnel en français.\nPatient : ${reportPatient}\nSymptômes : ${reportSymptoms}\nDiagnostic supposé : ${reportDiag || 'à déterminer'}\nInclure : résumé clinique, hypothèses diagnostiques, examens recommandés, traitement suggéré.`;
+            const res = await authFetch('http://localhost:5000/api/ai/chat', {
+                method: 'POST',
+                body: JSON.stringify({ message: prompt }),
+            });
+            const data = await res.json();
+            setReportResult(data.reply || 'Erreur génération.');
+        } catch { setReportResult('Erreur serveur.'); }
+        setReportLoading(false);
+    };
+
+    const downloadReportPDF = () => {
+        const doc = new jsPDF();
+        doc.setFillColor(10, 37, 64);
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.text('MEDCARE AI — RAPPORT MÉDICAL', 20, 25);
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(12);
+        let y = 55;
+        doc.text(`Patient : ${reportPatient}`, 20, y); y += 10;
+        doc.text(`Médecin : Dr. ${user?.prenom} ${user?.nom}`, 20, y); y += 10;
+        doc.text(`Date : ${new Date().toLocaleDateString('fr-FR')}`, 20, y); y += 15;
+        doc.setFontSize(11);
+        const lines = doc.splitTextToSize(reportResult, 170);
+        doc.text(lines, 20, y);
+        doc.save(`rapport-${reportPatient.replace(/\s/g, '_')}.pdf`);
+    };
+
+    const handleChatSend = async () => {
+        if (!chatInput.trim() || chatLoading) return;
+        const userMsg = chatInput.trim();
+        setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setChatInput('');
+        setChatLoading(true);
+        try {
+            const res = await authFetch('http://localhost:5000/api/ai/chat', {
+                method: 'POST',
+                body: JSON.stringify({ message: userMsg }),
+            });
+            const data = await res.json();
+            setChatMessages(prev => [...prev, { role: 'bot', text: data.reply || 'Erreur.' }]);
+        } catch {
+            setChatMessages(prev => [...prev, { role: 'bot', text: 'Erreur de connexion.' }]);
+        }
+        setChatLoading(false);
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    };
+
+    const handleRiskScore = async () => {
+        if (!riskAge || !riskSymptoms) return;
+        setRiskLoading(true); setRiskResult(null);
+        try {
+            const prompt = `Évalue le score de risque médical de ce patient en JSON.\nÂge : ${riskAge}\nConditions chroniques : ${riskConditions || 'aucune'}\nSymptômes actuels : ${riskSymptoms}\nRéponds UNIQUEMENT avec ce format JSON (sans markdown) :\n{"score": <0-100>, "niveau": "faible|modere|eleve", "facteurs": ["..."], "recommandation": "..."}`;
+            const res = await authFetch('http://localhost:5000/api/ai/chat', {
+                method: 'POST',
+                body: JSON.stringify({ message: prompt }),
+            });
+            const data = await res.json();
+            try {
+                const cleaned = data.reply.replace(/```json|```/g, '').trim();
+                setRiskResult(JSON.parse(cleaned));
+            } catch { setRiskResult({ score: '?', niveau: 'inconnu', facteurs: [], recommandation: data.reply }); }
+        } catch { setRiskResult({ score: '?', niveau: 'inconnu', facteurs: [], recommandation: 'Erreur serveur.' }); }
+        setRiskLoading(false);
+    };
+
+    const AI_TABS = [
+        { id: 'symptoms', icon: '🔍', label: 'Analyser symptômes' },
+        { id: 'report',   icon: '📋', label: 'Rapport médical' },
+        { id: 'chat',     icon: '💬', label: 'Chatbot médical' },
+        { id: 'risk',     icon: '📊', label: 'Score de risque' },
+    ];
+
     const renderAI = () => (
-<<<<<<< Updated upstream
         <div className="card">
             <div className="card-header">
-                <h3>🤖 Outils IA</h3>
-                <span className="badge badge-purple">Bientôt disponible</span>
+                <h3>🤖 Outils IA Médecin</h3>
+                <span className="badge badge-green">IA Active</span>
             </div>
-            <div className="coming-soon">
-                <div className="coming-soon-icon">🚧</div>
-                <h4>Module IA en développement</h4>
-                <p>L'intelligence artificielle vous permettra bientôt de :</p>
-                <ul className="coming-soon-list">
-                    <li>🔍 Analyser les symptômes des patients</li>
-                    <li>📋 Générer des rapports médicaux</li>
-                    <li>💬 Chatbot pour répondre aux patients</li>
-                    <li>📊 Évaluer les scores de risque</li>
-                </ul>
-                <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible.</div>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+                {AI_TABS.map(t => (
+                    <button key={t.id} onClick={() => setAiTab(t.id)} style={{
+                        padding: '10px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        fontWeight: 600, fontSize: 13,
+                        background: aiTab === t.id ? 'linear-gradient(135deg,var(--primary),var(--primary-dark))' : '#f1f5f9',
+                        color: aiTab === t.id ? '#fff' : 'var(--dark-3)',
+                    }}>{t.icon} {t.label}</button>
+                ))}
             </div>
-=======
-    <div className="card">
-        <div className="card-header">
-            <h3>🤖 Assistant IA Médical</h3>
->>>>>>> Stashed changes
-        </div>
 
-        <div style={{ marginTop: '20px' }}>
-
-            <textarea
-                placeholder="Décrivez les symptômes ou posez une question médicale..."
-                value={aiMessage}
-                onChange={(e) => setAiMessage(e.target.value)}
-                style={{
-                    width: '100%',
-                    minHeight: '120px',
-                    padding: '15px',
-                    borderRadius: '10px',
-                    border: '1px solid #ccc',
-                    marginBottom: '15px'
-                }}
-            />
-
-            <button
-                onClick={handleAIChat}
-                className="action-btn"
-                disabled={aiLoading}
-            >
-                {aiLoading ? 'Analyse en cours...' : 'Envoyer à l’IA'}
-            </button>
-            <button
-    onClick={() => {
-    generateReport();
-    generatePDF();
-}}
-    className="action-btn"
-    style={{ marginLeft: '10px' }}
->
-    📄 Générer rapport
-</button>
-
-            {aiResponse && (
-                <div
-                    style={{
-                        marginTop: '20px',
-                        padding: '20px',
-                        background: '#f5f7ff',
-                        borderRadius: '10px',
-                        whiteSpace: 'pre-wrap'
-                    }}
-                >
-                    <strong>Réponse IA :</strong>
-                    <p>{aiResponse}</p>
+            {aiTab === 'symptoms' && (
+                <div>
+                    <p style={{ color: 'var(--gray)', marginBottom: 16 }}>Entrez les symptômes séparés par des virgules.</p>
+                    <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                        <input style={{ flex: 3, padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none' }}
+                            placeholder="fièvre, toux, fatigue..."
+                            value={symptomsInput} onChange={e => setSymptomsInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleDiagnose()} />
+                        <input style={{ flex: 1, padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none' }}
+                            type="number" placeholder="Âge" value={patientAge} onChange={e => setPatientAge(e.target.value)} />
+                    </div>
+                    <button className="btn-primary" style={{ width: 'auto', padding: '10px 28px' }} onClick={handleDiagnose} disabled={diagnoseLoading}>
+                        {diagnoseLoading ? 'Analyse...' : '🔍 Analyser'}
+                    </button>
+                    {diagnoseResult && (
+                        <div className="ai-result" style={{ marginTop: 20 }}>
+                            <p style={{ marginBottom: 12, color: 'var(--gray)' }}>{diagnoseResult.message}</p>
+                            {diagnoseResult.results?.map((r, i) => (
+                                <div key={i} style={{ background: '#fff', borderRadius: 8, padding: '14px 18px', marginBottom: 10, border: '1px solid var(--border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                        <strong style={{ fontSize: 15 }}>{r.condition}</strong>
+                                        <span className={`risk-badge risk-${r.urgence === 'élevé' ? 'eleve' : r.urgence === 'moyen' ? 'modere' : 'faible'}`}>{r.urgence}</span>
+                                    </div>
+                                    <div style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 4 }}>Spécialité : <strong>{r.specialite}</strong> — Confiance : <strong>{r.confidence}%</strong></div>
+                                    <div style={{ fontSize: 13, color: 'var(--dark-3)' }}>{r.conseil}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
-            {report && (
-    <div
-        style={{
-            marginTop: '20px',
-            padding: '20px',
-            background: '#eef6ff',
-            borderRadius: '10px',
-            whiteSpace: 'pre-line'
-        }}
-    >
-        <h3>📄 Rapport Médical</h3>
-        <p>{report}</p>
-    </div>
-)}
 
+            {aiTab === 'report' && (
+                <div>
+                    <p style={{ color: 'var(--gray)', marginBottom: 16 }}>Générez un rapport médical structuré via IA puis téléchargez-le en PDF.</p>
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Nom du patient *</label>
+                        <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                            placeholder="Prénom Nom" value={reportPatient} onChange={e => setReportPatient(e.target.value)} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Symptômes *</label>
+                        <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                            placeholder="douleur thoracique, essoufflement..." value={reportSymptoms} onChange={e => setReportSymptoms(e.target.value)} />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Diagnostic supposé (optionnel)</label>
+                        <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                            placeholder="ex: hypertension" value={reportDiag} onChange={e => setReportDiag(e.target.value)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button className="btn-primary" style={{ width: 'auto', padding: '10px 24px' }} onClick={handleGenerateReport} disabled={reportLoading}>
+                            {reportLoading ? 'Génération...' : '📋 Générer le rapport'}
+                        </button>
+                        {reportResult && (
+                            <button className="action-btn" style={{ width: 'auto', marginBottom: 0 }} onClick={downloadReportPDF}>📄 Télécharger PDF</button>
+                        )}
+                    </div>
+                    {reportResult && (
+                        <div className="ai-result" style={{ marginTop: 20 }}>
+                            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, margin: 0 }}>{reportResult}</pre>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {aiTab === 'chat' && (
+                <div className="chatbot-container">
+                    <div className="chat-messages">
+                        {chatMessages.map((m, i) => (
+                            <div key={i} className={`chat-message ${m.role}`}>
+                                <div className="message-bubble">{m.text}</div>
+                            </div>
+                        ))}
+                        {chatLoading && <div className="chat-typing">L'IA réfléchit...</div>}
+                        <div ref={chatEndRef} />
+                    </div>
+                    <div className="chat-input-area">
+                        <input placeholder="Posez une question médicale..."
+                            value={chatInput} onChange={e => setChatInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleChatSend()} disabled={chatLoading} />
+                        <button onClick={handleChatSend} disabled={chatLoading}>Envoyer</button>
+                    </div>
+                </div>
+            )}
+
+            {aiTab === 'risk' && (
+                <div>
+                    <p style={{ color: 'var(--gray)', marginBottom: 16 }}>Évaluez le score de risque médical d'un patient.</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                        <div>
+                            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Âge *</label>
+                            <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                type="number" placeholder="ex: 55" value={riskAge} onChange={e => setRiskAge(e.target.value)} />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Conditions chroniques</label>
+                            <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                placeholder="diabète, hypertension..." value={riskConditions} onChange={e => setRiskConditions(e.target.value)} />
+                        </div>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Symptômes actuels *</label>
+                        <input style={{ width: '100%', padding: '10px 14px', border: '2px solid var(--border)', borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                            placeholder="douleur thoracique, essoufflement..." value={riskSymptoms} onChange={e => setRiskSymptoms(e.target.value)} />
+                    </div>
+                    <button className="btn-primary" style={{ width: 'auto', padding: '10px 28px' }} onClick={handleRiskScore} disabled={riskLoading}>
+                        {riskLoading ? 'Évaluation...' : '📊 Évaluer le risque'}
+                    </button>
+                    {riskResult && (
+                        <div className="ai-result" style={{ marginTop: 20 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                                <div className={`risk-score risk-${riskResult.niveau === 'eleve' ? 'eleve' : riskResult.niveau === 'modere' ? 'modere' : 'faible'}`}>
+                                    {riskResult.score}/100
+                                </div>
+                                <span className={`risk-badge risk-${riskResult.niveau === 'eleve' ? 'eleve' : riskResult.niveau === 'modere' ? 'modere' : 'faible'}`}>
+                                    {riskResult.niveau === 'eleve' ? '⚠️ Risque élevé' : riskResult.niveau === 'modere' ? '⚡ Risque modéré' : '✅ Risque faible'}
+                                </span>
+                            </div>
+                            {riskResult.facteurs?.length > 0 && (
+                                <div style={{ marginBottom: 10 }}>
+                                    <strong style={{ fontSize: 13 }}>Facteurs de risque :</strong>
+                                    <ul style={{ margin: '6px 0 0 20px', fontSize: 13, color: 'var(--dark-3)' }}>
+                                        {riskResult.facteurs.map((f, i) => <li key={i}>{f}</li>)}
+                                    </ul>
+                                </div>
+                            )}
+                            <div style={{ fontSize: 14, color: 'var(--dark-3)' }}><strong>Recommandation :</strong> {riskResult.recommandation}</div>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
-    </div>
-);
+    );
 
     const renderContent = () => {
         if (active === 'planning') return renderPlanning();
@@ -524,40 +608,16 @@ const generatePDF = () => {
                         <h2>Bonjour, <span className="highlight">Dr. {user?.prenom} 👋</span></h2>
                         <p>Vous avez <strong style={{ color: 'var(--primary)' }}>{todayAppts.length} consultation(s)</strong> aujourd'hui</p>
                     </div>
-                    <button className="notif-bell" onClick={markNotificationsRead}>
-                        🔔
-                        {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
-                    </button>
                 </div>
-
-                {/* Panneau notifications (hors du banner pour éviter overflow:hidden) */}
-                {showNotifPanel && (
-                    <div className="notif-panel-wrapper">
-                        <div className="notif-panel">
-                            <div className="notif-panel-header">
-                                🔔 Notifications
-                                <button className="notif-close" onClick={() => setShowNotifPanel(false)}>✕</button>
-                            </div>
-                            {notifications.length === 0 ? (
-                                <div className="notif-empty">Aucune notification</div>
-                            ) : notifications.map((n, i) => (
-                                <div key={i} className={`notif-item ${n.lu ? '' : 'unread'}`}>
-                                    <div className="notif-msg">{n.message}</div>
-                                    <div className="notif-time">{formatDate(n.created_at)}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
                 {renderContent()}
             </main>
 
-            {/* Modal confirmer avec prix */}
+            {/* Modal pour fixer le prix */}
             {showPriceModal && selectedAppointment && (
                 <div className="modal-overlay" onClick={() => setShowPriceModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>✅ Confirmer le rendez-vous</h3>
+                            <h3>💰 Fixer le prix de la consultation</h3>
                             <button className="modal-close" onClick={() => setShowPriceModal(false)}>✕</button>
                         </div>
                         <div className="form-group">
@@ -566,7 +626,7 @@ const generatePDF = () => {
                         </div>
                         <div className="form-group">
                             <label>Date</label>
-                            <input type="text" value={`${formatDate(selectedAppointment.date_heure)} à ${formatTime(selectedAppointment.date_heure)}`} disabled className="disabled-input" />
+                            <input type="text" value={formatDate(selectedAppointment.date_heure)} disabled className="disabled-input" />
                         </div>
                         <div className="form-group">
                             <label>Motif</label>
@@ -574,12 +634,11 @@ const generatePDF = () => {
                         </div>
                         <div className="form-group">
                             <label>💰 Prix de la consultation (€)</label>
-                            <input type="number" placeholder="Ex: 50" value={prixInput} onChange={e => setPrixInput(e.target.value)} min="0" step="5" autoFocus />
+                            <input type="number" placeholder="Entrez le montant" value={prixInput} onChange={(e) => setPrixInput(e.target.value)} min="0" step="10" required autoFocus />
                         </div>
-                        {modalMsg && <div className="modal-msg error">{modalMsg}</div>}
                         <div className="modal-buttons">
                             <button className="btn-secondary" onClick={() => setShowPriceModal(false)}>Annuler</button>
-                            <button className="btn-primary" onClick={handleConfirmWithPrice}>✅ Confirmer & notifier le patient</button>
+                            <button className="btn-primary" onClick={handleConfirmWithPrice}>Confirmer et notifier le patient</button>
                         </div>
                     </div>
                 </div>

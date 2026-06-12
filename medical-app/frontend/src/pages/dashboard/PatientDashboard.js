@@ -343,71 +343,59 @@ ${aiMessage}
     );
 
     const renderAI = () => (
-<<<<<<< Updated upstream
+    <>
         <div className="card">
             <div className="card-header">
                 <h3>🤖 Diagnostic IA</h3>
-                <span className="badge badge-purple">Bientôt disponible</span>
+                <span className="badge badge-purple">Disponible</span>
             </div>
+
             <div className="coming-soon">
-                <div className="coming-soon-icon">🚧</div>
-                <h4>Module IA en développement</h4>
-                <p>L'intelligence artificielle vous permettra bientôt de :</p>
-                <ul className="coming-soon-list">
-                    <li>🔍 Analyser vos symptômes</li>
-                    <li>📋 Obtenir des recommandations médicales</li>
-                    <li>💬 Discuter avec un assistant médical</li>
-                    <li>📊 Évaluer votre état de santé</li>
-                </ul>
-                <div className="coming-soon-note">⚡ Cette fonctionnalité sera bientôt disponible pour tous les patients.</div>
+                <div className="coming-soon-icon">🤖</div>
+
+                <textarea
+                    placeholder="Décrivez vos symptômes..."
+                    value={aiMessage}
+                    onChange={(e) => setAiMessage(e.target.value)}
+                    style={{
+                        width: '100%',
+                        minHeight: '150px',
+                        padding: '15px',
+                        borderRadius: '10px',
+                        border: '1px solid #ccc',
+                        marginTop: '20px'
+                    }}
+                />
+
+                <button
+                    className="action-btn"
+                    onClick={handlePatientAI}
+                    disabled={aiLoading}
+                    style={{ marginTop: '15px' }}
+                >
+                    {aiLoading
+                        ? 'Analyse en cours...'
+                        : 'Analyser mes symptômes'}
+                </button>
+
+                {aiResponse && (
+                    <div
+                        style={{
+                            marginTop: '20px',
+                            padding: '20px',
+                            background: '#f5f7ff',
+                            borderRadius: '10px',
+                            whiteSpace: 'pre-wrap'
+                        }}
+                    >
+                        <strong>Réponse IA :</strong>
+                        <p>{aiResponse}</p>
+                    </div>
+                )}
             </div>
-=======
-    <div className="card">
-        <div className="card-header">
-            <h3>🤖 Assistant IA Patient</h3>
->>>>>>> Stashed changes
         </div>
-
-        <textarea
-            placeholder="Décrivez vos symptômes..."
-            value={aiMessage}
-            onChange={(e) => setAiMessage(e.target.value)}
-            style={{
-                width: '100%',
-                minHeight: '150px',
-                padding: '15px',
-                borderRadius: '10px',
-                border: '1px solid #ccc',
-                marginTop: '20px'
-            }}
-        />
-
-        <button
-            className="action-btn"
-            onClick={handlePatientAI}
-            disabled={aiLoading}
-            style={{ marginTop: '15px' }}
-        >
-            {aiLoading ? 'Analyse en cours...' : 'Analyser mes symptômes'}
-        </button>
-
-        {aiResponse && (
-            <div
-                style={{
-                    marginTop: '20px',
-                    padding: '20px',
-                    background: '#f5f7ff',
-                    borderRadius: '10px',
-                    whiteSpace: 'pre-wrap'
-                }}
-            >
-                <strong>Réponse IA :</strong>
-                <p>{aiResponse}</p>
-            </div>
-        )}
-    </div>
+    </>
 );
-
     const renderContent = () => {
         if (active === 'appointments') return renderAppointments();
         if (active === 'doctors')      return renderDoctors();

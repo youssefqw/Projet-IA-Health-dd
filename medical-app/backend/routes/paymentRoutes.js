@@ -81,6 +81,27 @@ router.get('/doctor/stats', authMiddleware, async (req, res) => {
             [medecin_id]
         );
 
+        // Fallback: aussi compter les RDV confirmés/terminés avec prix mais sans paiement enregistré
+        const [fallback] = await db.execute(
+            `SELECT 
+                COALESCE(SUM(a.prix_medecin), 0) as total,
+                COUNT(*) as nombre_paiements,
+                COALESCE(AVG(a.prix_medecin), 0) as moyenne,
+                COALESCE(SUM(CASE WHEN MONTH(a.date_heure) = MONTH(CURRENT_DATE()) AND YEAR(a.date_heure) = YEAR(CURRENT_DATE()) THEN a.prix_medecin ELSE 0 END), 0) as mois_en_cours
+             FROM appointments a
+             WHERE a.medecin_id = ? AND a.statut IN ('confirmé','terminé') AND a.prix_medecin > 0
+               AND a.id NOT IN (SELECT rendez_vous_id FROM paiements WHERE medecin_id = ? AND statut = 'paye')`,
+            [medecin_id, medecin_id]
+        );
+
+        const merged = {
+            total: parseFloat(total[0]?.total || 0) + parseFloat(fallback[0]?.total || 0),
+            nombre: parseInt(total[0]?.nombre_paiements || 0) + parseInt(fallback[0]?.nombre_paiements || 0),
+            moyenne: 0,
+            mois_en_cours: parseFloat(total[0]?.mois_en_cours || 0) + parseFloat(fallback[0]?.mois_en_cours || 0),
+        };
+        merged.moyenne = merged.nombre > 0 ? Math.round(merged.total / merged.nombre) : 0;
+
         const [recent] = await db.execute(
             `SELECT 
                 p.*,
@@ -96,15 +117,7 @@ router.get('/doctor/stats', authMiddleware, async (req, res) => {
             [medecin_id]
         );
 
-        res.json({
-            stats: {
-                total: total[0]?.total || 0,
-                nombre: total[0]?.nombre_paiements || 0,
-                moyenne: Math.round(total[0]?.moyenne || 0),
-                mois_en_cours: total[0]?.mois_en_cours || 0
-            },
-            recent: recent
-        });
+        res.json({ stats: merged, recent });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
@@ -118,34 +131,47 @@ router.get('/admin/stats', authMiddleware, async (req, res) => {
     }
 
     try {
-        const [global] = await db.execute(
-            `SELECT 
-                COALESCE(SUM(montant), 0) as total_global,
-                COUNT(*) as nombre_total,
-                COUNT(DISTINCT medecin_id) as medecins_actifs
-             FROM paiements 
-             WHERE statut = 'paye'`
+        // Global: paiements enregistrés + RDV avec prix non encore dans paiements
+        const [g1] = await db.execute(
+            `SELECT COALESCE(SUM(montant), 0) as total_global, COUNT(*) as nombre_total, COUNT(DISTINCT medecin_id) as medecins_actifs
+             FROM paiements WHERE statut = 'paye'`
         );
+        const [g2] = await db.execute(
+            `SELECT COALESCE(SUM(prix_medecin), 0) as total_global, COUNT(*) as nombre_total
+             FROM appointments
+             WHERE statut IN ('confirmé','terminé') AND prix_medecin > 0
+               AND id NOT IN (SELECT rendez_vous_id FROM paiements WHERE statut = 'paye')`
+        );
+
+        const global = {
+            total_global: parseFloat(g1[0].total_global) + parseFloat(g2[0].total_global),
+            nombre_total: parseInt(g1[0].nombre_total) + parseInt(g2[0].nombre_total),
+            medecins_actifs: g1[0].medecins_actifs,
+        };
 
         const [byDoctor] = await db.execute(
             `SELECT 
-                u.id,
-                u.nom,
-                u.prenom,
-                u.specialite,
-                COALESCE(SUM(p.montant), 0) as total,
-                COUNT(p.id) as nombre_paiements
+                u.id, u.nom, u.prenom, u.specialite,
+                COALESCE(
+                    (SELECT SUM(p.montant) FROM paiements p WHERE p.medecin_id = u.id AND p.statut = 'paye'), 0
+                ) + COALESCE(
+                    (SELECT SUM(a.prix_medecin) FROM appointments a
+                     WHERE a.medecin_id = u.id AND a.statut IN ('confirmé','terminé') AND a.prix_medecin > 0
+                       AND a.id NOT IN (SELECT rendez_vous_id FROM paiements WHERE medecin_id = u.id AND statut = 'paye')), 0
+                ) as total,
+                COALESCE(
+                    (SELECT COUNT(*) FROM paiements p WHERE p.medecin_id = u.id AND p.statut = 'paye'), 0
+                ) + COALESCE(
+                    (SELECT COUNT(*) FROM appointments a
+                     WHERE a.medecin_id = u.id AND a.statut IN ('confirmé','terminé') AND a.prix_medecin > 0
+                       AND a.id NOT IN (SELECT rendez_vous_id FROM paiements WHERE medecin_id = u.id AND statut = 'paye')), 0
+                ) as nombre_paiements
              FROM users u
-             LEFT JOIN paiements p ON u.id = p.medecin_id AND p.statut = 'paye'
              WHERE u.role = 'medecin'
-             GROUP BY u.id, u.nom, u.prenom, u.specialite
              ORDER BY total DESC`
         );
 
-        res.json({
-            global: global[0],
-            byDoctor: byDoctor
-        });
+        res.json({ global, byDoctor });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
